@@ -33,6 +33,6 @@ config_model:
 
 
   # partial training in minibatches. to disable set to -1
-  partial_training: -1
+  partial_training: 50
   DEBUG: False
   report_loss: True
