@@ -124,29 +124,33 @@ class Model(torch.nn.Module):
         # initialise arrays for recording the hidden layers
         if self.config["record_hidden"]:
             
-            self.config["layer1"][0] = time_steps
-            self.config["layer2"][0] = time_steps
-            self.config["layer3"][0] = time_steps
+            # self.config["layer1"][0] = time_steps
+            # self.config["layer2"][0] = time_steps
+            # self.config["layer3"][0] = time_steps
 
+            # on gpu might be a tiny bit faster, but idk if that's worth it
             rec_spk1 = torch.empty(
-                self.config["layer1"],
+                [time_steps, *self.config["layer1"]],
                 dtype = torch.float32,
-                device = self.device
-                # device = torch.device("cpu")
+                device = self.device,
+                # device = torch.device("cpu"),
+                requires_grad = False
             )
 
             rec_spk2 = torch.empty(
-                self.config["layer2"],
+                [time_steps, *self.config["layer2"]],
                 dtype = torch.float32,
-                device = self.device
-                # device = torch.device("cpu")
+                device = self.device,
+                # device = torch.device("cpu"),
+                requires_grad = False
             )
 
             rec_spk3 = torch.empty(
-                self.config["layer3"],
+                [time_steps, *self.config["layer3"]],
                 dtype = torch.float32,
-                device = self.device
-                # device = torch.device("cpu")
+                evice = self.device,
+                # device = torch.device("cpu"),
+                requires_grad = False
             )
 
         # the actual forward pass
@@ -209,7 +213,7 @@ class Model(torch.nn.Module):
 
         if self.config["record_train"]:
             self.config["record_hidden"] = True
-        elif self.config["record_train"]:
+        elif not self.config["record_train"]:
             self.config["record_hidden"] = False
 
         loss_hist = []
@@ -276,7 +280,7 @@ class Model(torch.nn.Module):
 
         if self.config["record_test"]:
             self.config["record_hidden"] = True
-        elif self.config["record_test"]:
+        elif not self.config["record_test"]:
             self.config["record_hidden"] = False
 
         loss_hist = []
@@ -352,6 +356,6 @@ class Model(torch.nn.Module):
         self.config["layer3"] = list(mem3.shape)
 
         # insert value 0 at index 0, for overwriting with time_steps in forward
-        self.config["layer1"].insert(0, 0)
-        self.config["layer2"].insert(0, 0)
-        self.config["layer3"].insert(0, 0)
+        # self.config["layer1"].insert(0, 0)
+        # self.config["layer2"].insert(0, 0)
+        # self.config["layer3"].insert(0, 0)
