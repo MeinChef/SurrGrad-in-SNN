@@ -2,6 +2,7 @@
 import os
 import warnings
 import typing
+import time
 from collections.abc import Callable
 
 # file handling
@@ -18,4 +19,5 @@ import torchvision
 
 # snntorch, because it's stupid.
 import snntorch
+from snntorch import functional
 from snntorch import surrogate

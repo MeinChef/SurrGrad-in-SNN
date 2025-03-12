@@ -1,15 +1,20 @@
-import torch.utils.data.dataloader
+from imports import Callable
 from imports import torch
 from imports import snntorch as snn
-from imports import numpy as np
+from imports import functional # snntorch.functional
 import misc
 
 class Model(torch.nn.Module):
     def __init__(
-            self, 
-            config: dict
-        ) -> None:
+        self, 
+        config: dict
+    ) -> None:
+        '''
+        Constructor of the Model class. Config is specified in config.yml
 
+        ### Args:
+        config: dictionary
+        '''
         super().__init__()
         
         self.config = config
@@ -21,34 +26,80 @@ class Model(torch.nn.Module):
         self.connect1 = torch.nn.Conv2d(2, 12, 5)
         self.connect2 = torch.nn.MaxPool2d(2)
         self.neuron1 = snn.Leaky(
-                beta = config['beta'], 
-                spike_grad = self.surrogate, 
-                init_hidden = False
-            )
+            beta = config['beta'], 
+            spike_grad = self.surrogate, 
+            init_hidden = False
+        )
         
         self.connect3 = torch.nn.Conv2d(12, 32, 5)
         self.connect4 = torch.nn.MaxPool2d(2)
         self.neuron2 = snn.Leaky(
-                beta = config['beta'], 
-                spike_grad = self.surrogate, 
-                init_hidden = False
-            )
+            beta = config['beta'], 
+            spike_grad = self.surrogate, 
+            init_hidden = False
+        )
         
         self.connect5 = torch.nn.Flatten()
         self.connect6 = torch.nn.Linear(32*5*5, 10)
         self.neuron3 = snn.Leaky(
-                beta = config['beta'], 
-                spike_grad = self.surrogate, 
-                init_hidden = False
-            )
+            beta = config['beta'], 
+            spike_grad = self.surrogate, 
+            init_hidden = False
+        )
         
         # send to gpu
         self.to(device = self.device)
 
+
+    def set_loss(
+        self,
+        loss: Callable = functional.loss.mse_temporal_loss(target_is_time = True)
+    ) -> None:
+        '''
+        Function to set the loss function to be used internally.
+        
+        ### Args:
+        loss: Callable - pass a Classs, whose caller takes (spk_out, targets)
+        '''
+        self.loss = loss
+
+
+    def set_acc(
+        self,
+        acc: Callable = functional.acc.accuracy_temporal
+    ) -> None:
+        '''
+        Function to set the accuarcy function to be used internally.
+        
+        ### Args:
+        acc: Callable - pass a function that takes (spk_out, targets) as positional arguments
+        '''
+        self.acc = acc
+
+    def set_optim(
+        self,
+        optim: Callable
+    ) -> None:
+        '''
+        Function to set the Optimiser to be used internally
+
+        ### Args:
+        optim: Callable - pass an already initialised Optimiser
+        '''
+        self.optim = optim
+
+
     def forward(
-            self, 
-            x: torch.Tensor
-        ) -> tuple[torch.Tensor, torch.Tensor]:
+        self, 
+        x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        '''
+        Forward pass of the Model. Passes x through all layers, returns either a tuple[tensor, tensor] or a tuple[tensor].
+        Depending on config["record_hidden"], set in config.yml
+        
+        ### Args:
+        x: tensor - a minibatch with the dimensions [time_steps, minibatch_size, 2, 34, 34]
+        '''
         
         mem1 = self.neuron1.reset_mem()
         mem2 = self.neuron2.reset_mem()
@@ -70,6 +121,7 @@ class Model(torch.nn.Module):
             print("Size of mem2:", mem2.shape)
             print("Size of mem3:", mem3.shape)
 
+        # initialise arrays for recording the hidden layers
         if self.config["record_hidden"]:
             
             self.config["layer1"][0] = time_steps
@@ -79,43 +131,44 @@ class Model(torch.nn.Module):
             rec_spk1 = torch.empty(
                 self.config["layer1"],
                 dtype = torch.float32,
-                # device = self.device
-                device = torch.device("cpu")
+                device = self.device
+                # device = torch.device("cpu")
             )
 
             rec_spk2 = torch.empty(
                 self.config["layer2"],
                 dtype = torch.float32,
-                # device = self.device
-                device = torch.device("cpu")
+                device = self.device
+                # device = torch.device("cpu")
             )
 
             rec_spk3 = torch.empty(
                 self.config["layer3"],
                 dtype = torch.float32,
-                # device = self.device
-                device = torch.device("cpu")
+                device = self.device
+                # device = torch.device("cpu")
             )
 
-
+        # the actual forward pass
         for step in range(time_steps):
-            cur1 = self.connect1(x[step])
-            cur2 = self.connect2(cur1)
-            spk1, mem1 = self.neuron1(cur2, mem1)
-            cur3 = self.connect3(spk1)
-            cur4 = self.connect4(cur3)
-            spk2, mem2 = self.neuron2(cur4, mem2)
-            cur5 = self.connect5(spk2)
-            cur6 = self.connect6(cur5)
-            spk3, mem3 = self.neuron3(cur6, mem3)
+            cur = self.connect1(x[step])
+            cur = self.connect2(cur)
+            spk1, mem1 = self.neuron1(cur, mem1)
+            cur = self.connect3(spk1)
+            cur = self.connect4(cur)
+            spk2, mem2 = self.neuron2(cur, mem2)
+            cur = self.connect5(spk2)
+            cur = self.connect6(cur)
+            spk3, mem3 = self.neuron3(cur, mem3)
 
             out[step] = spk3
 
+            # recording
             if self.config["record_hidden"]:
                 rec_spk1[step] = spk1
                 rec_spk2[step] = spk2
                 rec_spk3[step] = spk3
-                
+
 
         if self.config["DEBUG"]:
             print("Size of mem1:", mem1.shape)
@@ -136,31 +189,137 @@ class Model(torch.nn.Module):
         if self.config["record_hidden"]:
             return out, (rec_spk1, rec_spk2, rec_spk3)
         
-        return out
+        return (out,)
 
 
     def train_loop(
-            self, 
-            data: torch.utils.data.DataLoader
-        ) -> int:
+        self, 
+        data: torch.utils.data.DataLoader
+    ) -> tuple[list, list]:
+
+        '''
+        Function for the training loop over the entire dataset.
+
+        ### Args
+        data: DataLoader - data for the training
+        '''
 
         self.expand_config(data)
+        self.train()
 
-        for epoch in range(self.config["epochs"]):
+        if self.config["record_train"]:
+            self.config["record_hidden"] = True
+        elif self.config["record_train"]:
+            self.config["record_hidden"] = False
+
+        loss_hist = []
+        acc_hist  = []
+        rec_list  = [[],[],[]]
+
+        # training loop
+        for i, (x, target) in enumerate(data):
+            x = x.to(self.device)
+            target = target.to(self.device)
+            
+            if self.config["DEBUG"]:
+                print("Type of Data:", x.dtype, "\non GPU:", x.get_device(), "\nShape of Data:", x.shape)
+            
+            # differentiate between recording hidden states or not
+            if self.config["record_hidden"]:
+                x, rec = self.forward(x)
+
+                # separate the recordings to the individual layers
+                rec_list[0].append(rec[0])
+                rec_list[1].append(rec[1])
+                rec_list[2].append(rec[2])
+
+            else:
+                x, = self.forward(x)
+
+            # loss and accuracy calculations
+            loss = self.loss(x, target)
+            acc = self.acc(x, target)
+
+            # weight update
+            self.optim.zero_grad()
+            loss.backward()
+            self.optim.step()
+
+            # TODO: record loss/accuracy during training
+
+            if self.config["report_loss"]:
+                print("Current Loss during Training:", loss)
+                print("Current Accuracy during Training:", acc)
+
+            # interrupt training after specified amount of minibatches
+            if i == self.config["partial_training"]:
+                break
+
+            loss_hist.append(loss)
+            acc_hist.append(acc)
+
+        return loss_hist, acc_hist, rec_list
+    
+
+    def test_loop(
+        self,
+        data: torch.utils.data.DataLoader
+    ) -> None:
+        
+        '''
+        Function for evaluating the network on the test-part of a dataset.
+
+        ### Args
+        data: DataLoader - data for the testing
+        '''
+
+
+        if self.config["record_test"]:
+            self.config["record_hidden"] = True
+        elif self.config["record_test"]:
+            self.config["record_hidden"] = False
+
+        loss_hist = []
+        acc_hist  = []
+        rec_list  = [[],[],[]]
+
+        # test loop
+        with torch.no_grad():
+            self.train(False)
+
             for x, target in data:
                 x = x.to(self.device)
+                target = target.to(self.device)
                 
                 if self.config["DEBUG"]:
-                    print("Type of Data:", x.dtype, "\nGPU:", x.get_device())
+                    print("Type of Data:", x.dtype, "\non GPU:", x.get_device(), "\nShape of Data:", x.shape)
+                
+                # differentiate between recording hidden states or not
+                if self.config["record_hidden"]:
+                    x, rec = self.forward(x)
 
-                self.forward(x)
-                return 0
-            
+                    # separate the recordings to the individual layers
+                    rec_list[0].append(rec[0])
+                    rec_list[1].append(rec[1])
+                    rec_list[2].append(rec[2])
+        
+                else:
+                    x, = self.forward(x)
+
+                # loss and accuracy calculations
+                loss = self.loss(x, target)
+                acc = self.acc(x, target)
+
+                loss_hist.append(loss)
+                acc_hist.append(acc)
+
+        return loss_hist, acc_hist, rec_list
+
 
     def expand_config(
-            self, 
-            data: torch.utils.data.DataLoader
-        ) -> None:
+        self, 
+        data: torch.utils.data.DataLoader
+    ) -> None:
         '''
         Generates the config-values for the output shape of the individual layers in the network. Necessary for spike recording.
         ### Args:
