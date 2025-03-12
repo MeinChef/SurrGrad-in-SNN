@@ -1,5 +1,5 @@
 config_data:
-  DEBUG: True
+  DEBUG: False
   data_path: "data"
   to_memory: True
   filter_time: 10000
@@ -22,6 +22,8 @@ config_model:
   # available in this code: 
       # super_spike_21 [arg: TODO]
   surrogate: "sigmoid"
-  surrogate_arg: 25
+  surrogate_arg: [25]
   epochs: 25
   beta: 0.5
+  record_hidden: True
+  DEBUG: True
