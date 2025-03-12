@@ -30,5 +30,7 @@ def main() -> None:
         model.test_loop(data = test)
 
 if __name__ == "__main__":
+    # comment next line out, if you have given your directory a custom name 
     misc.check_working_directory()
+    
     main()
