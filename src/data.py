@@ -65,17 +65,17 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
     trainloader = torch.utils.data.DataLoader(
         cached_trainset, 
         batch_size = config["batch_size"], 
-        collate_fn = tonic.collation.PadTensors(batch_first=False), 
+        collate_fn = tonic.collation.PadTensors(batch_first = False), 
         shuffle = True,
-        num_workers = 5,
-        prefetch_factor = 20
+        num_workers = config["worker"],
+        prefetch_factor = config["prefetch"]
     )
     testloader = torch.utils.data.DataLoader(
         cached_testset, 
         batch_size = config["batch_size"], 
-        collate_fn = tonic.collation.PadTensors(batch_first=False),
-        num_workers = 5,
-        prefetch_factor = 20
+        collate_fn = tonic.collation.PadTensors(batch_first = False),
+        num_workers = config["worker"],
+        prefetch_factor = config["prefetch"]
     )
 
     return trainloader, testloader
