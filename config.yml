@@ -21,9 +21,18 @@ config_model:
   
   # available in this code: 
       # super_spike_21 [arg: TODO]
-  surrogate: "sigmoid"
-  surrogate_arg: [25]
-  epochs: 25
-  beta: 0.5
-  record_hidden: True
-  DEBUG: True
+  surrogate: "atan"
+  surrogate_arg: [2]
+  learning_rate: 0.03
+  epochs: 1
+  beta: 0.5 # of neurons
+
+  # record hidden layers?
+  record_train: False
+  record_test: True
+
+
+  # partial training in minibatches. to disable set to -1
+  partial_training: -1
+  DEBUG: False
+  report_loss: True
