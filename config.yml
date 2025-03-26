@@ -20,7 +20,7 @@ config_model:
       # triangular [arg: threshold]
   
   # available in this code: 
-      # super_spike_21 [arg: TODO]
+      # super_spike_21 [arg: [slope, alpha, beta]]
   surrogate: "atan"
   surrogate_arg: [2]
   learning_rate: 0.03
