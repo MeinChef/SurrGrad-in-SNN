@@ -6,7 +6,7 @@ from imports import Callable
 from imports import surrogate
 from imports import numpy as np
 from imports import datetime
-from grad import super_spike_21
+from grad import super_spike_19
 
 from imports import torch
 
@@ -51,8 +51,8 @@ def resolve_gradient(config: dict) -> Callable:
         return surrogate.straight_through_estimator()
     elif name == "triangular":
         return surrogate.triangular(config["surrogate_arg"][0])
-    elif name == "super_spike_21":
-        return surrogate.custom_surrogate(super_spike_21)
+    elif name == "super_spike_19":
+        return surrogate.custom_surrogate(super_spike_19)
     else:
         raise NameError("The surrogate function specified in config is unresolveable. Check source code and typos")
 
