@@ -18,7 +18,7 @@ class Model(torch.nn.Module):
         super().__init__()
         
         self.config = config
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps") if torch.backends.mps.is_available() else self.device
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
         
         self.surrogate = misc.resolve_gradient(config = self.config)
 
@@ -250,17 +250,20 @@ class Model(torch.nn.Module):
             self.optim.step()
 
             # TODO: record loss/accuracy during training
+            loss_hist.append(loss)
+            acc_hist.append(acc)
 
-            if self.config["report_loss"]:
+            if self.config["PROGRESS"]:
+                print(f"Epoch: {i}")
                 print("Current Loss during Training:", loss)
                 print("Current Accuracy during Training:", acc)
+
 
             # interrupt training after specified amount of minibatches
             if i == self.config["partial_training"]:
                 break
 
-            loss_hist.append(loss)
-            acc_hist.append(acc)
+
 
         return loss_hist, acc_hist, rec_list
     
