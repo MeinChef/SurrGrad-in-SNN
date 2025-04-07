@@ -65,8 +65,8 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
     )
 
 
-
-    # cached_trainset = tonic.MemoryCachedDataset(trainset, transform = transform)
+    # this thing eats RAM as snack
+    # cached_trainset = tonic.MemoryCachedDataset(trainset)
     # cached_testset  = tonic.MemoryCachedDataset(testset)
     
     cached_trainset = tonic.DiskCachedDataset(
@@ -80,9 +80,9 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
     )
 
 
-    # if config["DEBUG"]:
-    #     print("Sensor:", sensor)
-    #     print("Rough Size of Dataset in Memory:", len(pickle.dumps(cached_trainset)) + len(pickle.dumps(cached_testset)))
+    if config["DEBUG"]:
+        print("Sensor:", sensor)
+        print("Rough Size of Dataset in Memory:", len(pickle.dumps(cached_trainset)) + len(pickle.dumps(cached_testset)))
         
     # prepare them for training, 
     trainloader = torch.utils.data.DataLoader(
