@@ -6,8 +6,8 @@ config_data:
   filter_time: 10000
   time_window: 1000
   batch_size: 128
-  worker: 5
-  prefetch: 5
+  worker: 4
+  prefetch: 10
 
 config_model:
 
@@ -22,15 +22,15 @@ config_model:
   
   # available in this code: 
       # super_spike_21 [arg: [slope, alpha, beta]]
-  surrogate: "atan"
-  surrogate_arg: [.9]
+  surrogate: "sigmoid"
+  surrogate_arg: [2]
   learning_rate: 0.03
   epochs: 1
   beta: 0.5 # of neurons
 
   # record hidden layers?
   record_train: False
-  record_test: True
+  record_test: False
 
 
   # partial training in minibatches. to disable set to -1
