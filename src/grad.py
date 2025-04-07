@@ -89,4 +89,6 @@ class SuperSpike19(torch.autograd.Function):
         # ctx.dU_dW = dU_dW
         # ctx.dI_dW = dI_dW
 
+
+        # needs to return as many arguments as the forward function accepts
         return grad, None, None, None
