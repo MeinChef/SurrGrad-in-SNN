@@ -5,6 +5,7 @@ import typing
 import time
 import datetime
 from collections.abc import Callable
+import gc
 
 # file handling
 import yaml
@@ -22,3 +23,6 @@ import torchvision
 import snntorch
 from snntorch import functional
 from snntorch import surrogate
+
+# visualization
+import matplotlib.pyplot as plt
