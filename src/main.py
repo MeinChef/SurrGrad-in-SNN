@@ -27,6 +27,7 @@ def main() -> None:
     # training
     for epoch in range(config_model["epochs"]):
         model.train_loop(data = train)
+        # model spikes in Memory usage after Training (~486 Batches a 128)
         model.test_loop(data = test)
 
 if __name__ == "__main__":
