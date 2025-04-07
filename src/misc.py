@@ -6,6 +6,7 @@ from imports import Callable
 from imports import surrogate
 from imports import numpy as np
 from imports import datetime
+from imports import plt
 from grad import super_spike_21
 
 from imports import torch
@@ -100,3 +101,69 @@ def spk_rec_to_file(
 
 # liste = get_test_array_sffn()
 # spk_rec_to_file(liste)
+
+def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list,list,list] = None) -> None:
+    """
+    Saves the output from the model to a file, human-readable.
+
+    ### Arguments
+    config: dict - config dictionary
+    loss: list - list of loss values
+    acc: list - list of accuracy values
+    spk_rec: list - optional. spk_rec of all layers 
+    """
+
+    if len(loss) != 0:
+        try:
+            np.savetxt(
+                config["data_path"] + "/loss.txt",
+                loss,
+                fmt="%.8f"
+            )
+        except:
+            breakpoint()
+    if acc:
+        try:
+            if len(acc) != 0:
+                np.savetxt(
+                    config["data_path"] + "/acc.txt",
+                    acc,
+                    fmt="%.8f"
+                )
+        except:
+            breakpoint()
+
+    
+
+def plot_loss_acc(config:dict) -> None:
+    breakpoint()
+    # load values from files
+    loss = np.loadtxt(
+        config["data_path"] + "/loss.txt"
+    )
+
+    acc = np.loadtxt(
+        config["data_path"] + "/acc.txt"
+    )
+
+    assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
+    
+    epochs = np.arange(1, len(loss) + 1)
+
+    fig, ax1 = plt.subplots()
+
+    # Plot loss on the left y-axis
+    ax1.set_xlabel('Batches')
+    ax1.set_ylabel('Loss', color='orange')
+    ax1.plot(epochs, loss, color='orange', label='Loss')
+    ax1.tick_params(axis='y', labelcolor='orange')
+
+    # Create a second y-axis for accuracy
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Accuracy', color='blue')
+    ax2.plot(epochs, acc, color='blue', label='Accuracy')
+    ax2.tick_params(axis='y', labelcolor='blue')
+
+    plt.title('Loss and Accuracy during Training')
+    fig.tight_layout()
+    plt.show()
