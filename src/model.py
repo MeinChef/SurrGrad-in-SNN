@@ -19,7 +19,7 @@ class Model(torch.nn.Module):
         
         self.config = config
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-        
+        # self.device = torch.device("cpu")
         self.surrogate = misc.resolve_gradient(config = self.config)
 
         # the actual network
@@ -148,7 +148,7 @@ class Model(torch.nn.Module):
             rec_spk3 = torch.empty(
                 [time_steps, *self.config["layer3"]],
                 dtype = torch.float32,
-                evice = self.device,
+                device = self.device,
                 # device = torch.device("cpu"),
                 requires_grad = False
             )
@@ -250,12 +250,13 @@ class Model(torch.nn.Module):
             self.optim.step()
 
             # TODO: record loss/accuracy during training
+            # TODO: dump list regularly to file
             loss_hist.append(loss)
             acc_hist.append(acc)
 
             if self.config["PROGRESS"]:
-                print(f"Epoch: {i}")
-                print("Current Loss during Training:", loss)
+                print(f"Batch: {i}")
+                print("Current Loss during Training:", loss.item())
                 print("Current Accuracy during Training:", acc)
 
 
@@ -263,6 +264,8 @@ class Model(torch.nn.Module):
             if i == self.config["partial_training"]:
                 break
 
+            # TODO: gc.collect()?
+            
 
 
         return loss_hist, acc_hist, rec_list
