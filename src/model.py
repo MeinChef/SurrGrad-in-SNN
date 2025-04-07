@@ -132,24 +132,24 @@ class Model(torch.nn.Module):
             rec_spk1 = torch.empty(
                 [time_steps, *self.config["layer1"]],
                 dtype = torch.float32,
-                device = self.device,
-                # device = torch.device("cpu"),
+                # device = self.device,
+                device = torch.device("cpu"),
                 requires_grad = False
             )
 
             rec_spk2 = torch.empty(
                 [time_steps, *self.config["layer2"]],
                 dtype = torch.float32,
-                device = self.device,
-                # device = torch.device("cpu"),
+                # device = self.device,
+                device = torch.device("cpu"),
                 requires_grad = False
             )
 
             rec_spk3 = torch.empty(
                 [time_steps, *self.config["layer3"]],
                 dtype = torch.float32,
-                device = self.device,
-                # device = torch.device("cpu"),
+                # device = self.device,
+                device = torch.device("cpu"),
                 requires_grad = False
             )
 
@@ -169,9 +169,9 @@ class Model(torch.nn.Module):
 
             # recording
             if self.config["record_hidden"]:
-                rec_spk1[step] = spk1
-                rec_spk2[step] = spk2
-                rec_spk3[step] = spk3
+                rec_spk1[step] = spk1.detach().cpu()
+                rec_spk2[step] = spk2.detach().cpu()
+                rec_spk3[step] = spk3.detach().cpu()
 
 
         if self.config["DEBUG"]:
@@ -199,7 +199,7 @@ class Model(torch.nn.Module):
     def train_loop(
         self, 
         data: torch.utils.data.DataLoader
-    ) -> tuple[list, list]:
+    ) -> tuple[list, list, list]:
 
         '''
         Function for the training loop over the entire dataset.
@@ -251,7 +251,7 @@ class Model(torch.nn.Module):
 
             # TODO: record loss/accuracy during training
             # TODO: dump list regularly to file
-            loss_hist.append(loss)
+            loss_hist.append(loss.item())
             acc_hist.append(acc)
 
             if self.config["PROGRESS"]:
@@ -264,7 +264,8 @@ class Model(torch.nn.Module):
             if i == self.config["partial_training"]:
                 break
 
-            # TODO: gc.collect()?
+        # TODO: gc.collect()?
+        torch.cuda.empty_cache()
             
 
 
