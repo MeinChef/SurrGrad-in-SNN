@@ -58,8 +58,8 @@ class Model(torch.nn.Module):
         '''
         Function to set the loss function to be used internally.
         
-        ### Args:
-        loss: Callable - pass a Classs, whose caller takes (spk_out, targets)
+        :param loss: A Class, whose caller takes (spk_out, targets)
+        :type loss: Callable, required 
         '''
         self.loss = loss
 
