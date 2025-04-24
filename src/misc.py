@@ -7,9 +7,9 @@ from imports import surrogate
 from imports import numpy as np
 from imports import datetime
 from imports import plt
-from grad import super_spike_21
-
+# from grad import super_spike_21
 from imports import torch
+from imports import tqdm
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
@@ -35,8 +35,7 @@ def resolve_gradient(config: dict) -> Callable:
     for further use.
     '''
 
-    name = config["surrogate"]
-    name = name.lower()
+    name = config["surrogate"].lower()
 
     if name == "atan":
         return surrogate.atan(config["surrogate_arg"][0])
@@ -53,9 +52,38 @@ def resolve_gradient(config: dict) -> Callable:
     elif name == "triangular":
         return surrogate.triangular(config["surrogate_arg"][0])
     elif name == "super_spike_21":
-        return super_spike_21(config["surrogate_arg"][0],config["surrogate_arg"][1],config["surrogate_arg"][2])
+        raise NotImplementedError()
+        # return super_spike_21(config["surrogate_arg"][0],config["surrogate_arg"][1],config["surrogate_arg"][2])
     else:
         raise NameError("The surrogate function specified in config is unresolveable. Check source code and typos")
+
+def resolve_encoding(config: dict) -> Callable:
+    
+    name = config["target"].lower()
+
+    if name == "rate":
+        return lambda x: x
+    elif name == "latency":
+        return lambda x: x
+    elif name == "latency_timing":
+        def transf(x):
+            '''
+            Function for generating on_target spikes, given a class label.
+            '''
+            torch.manual_seed(x)
+            return torch.randint(
+                # quickest timing can be at 0
+                low = 0,
+                # slowest at 300 (see get_shortest_observation function)
+                high = 300, 
+                # arbitrarily set size (thought 4 spikes seem nice)
+                size = (4,),
+                dtype = torch.float32
+            )
+        return transf
+    else:
+        raise NameError("The target encoding specified in config is unresolveable. Check source code and typos")
+
 
 def spk_rec_to_file(
     data: list = None,
@@ -167,3 +195,16 @@ def plot_loss_acc(config:dict) -> None:
     plt.title('Loss and Accuracy during Training')
     fig.tight_layout()
     plt.show()
+
+def get_shortest_observation(
+        data: torch.utils.data.DataLoader
+) -> int:
+    """
+    Function for getting the shortest observation in the dataset.
+    """
+    shortest = 2**32
+    for x, y in tqdm.tqdm(data):
+        if x.shape[0] < shortest:
+            shortest = x.shape[0]
+    
+    return shortest # 307 in the whole dataset

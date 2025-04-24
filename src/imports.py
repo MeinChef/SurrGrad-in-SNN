@@ -6,6 +6,7 @@ import time
 import datetime
 from collections.abc import Callable
 import gc
+import tqdm
 
 # file handling
 import yaml
