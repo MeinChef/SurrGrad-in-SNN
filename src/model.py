@@ -12,8 +12,8 @@ class Model(torch.nn.Module):
         '''
         Constructor of the Model class. Config is specified in config.yml
 
-        ### Args:
-        config: dictionary
+        :param config: Dictionary containing model configuration
+        :type config: dictionary, required
         '''
         super().__init__()
         
@@ -71,8 +71,8 @@ class Model(torch.nn.Module):
         '''
         Function to set the accuarcy function to be used internally.
         
-        ### Args:
-        acc: Callable - pass a function that takes (spk_out, targets) as positional arguments
+        :param acc: A class or function, whose caller receives (spk_out, targets)
+        :type acc: Callable, required
         '''
         self.acc = acc
 
@@ -83,8 +83,8 @@ class Model(torch.nn.Module):
         '''
         Function to set the Optimiser to be used internally
 
-        ### Args:
-        optim: Callable - pass an already initialised Optimiser
+        :param optim: an already initalised Optimiser
+        :type optim: Callable, required
         '''
         self.optim = optim
 
@@ -97,8 +97,10 @@ class Model(torch.nn.Module):
         Forward pass of the Model. Passes x through all layers, returns either a tuple[tensor, tensor] or a tuple[tensor].
         Depending on config["record_hidden"], set in config.yml
         
-        ### Args:
-        x: tensor - a minibatch with the dimensions [time_steps, minibatch_size, 2, 34, 34]
+        :param x: tensor - a minibatch with the dimensions [time_steps, minibatch_size, 2, 34, 34]
+        :type x: torch.Tensor, required
+        :return: tuple[tensor, tensor] or tuple[tensor] - depending on config["record_hidden"]
+        :rtype: tuple
         '''
         
         mem1 = self.neuron1.reset_mem()
@@ -204,8 +206,10 @@ class Model(torch.nn.Module):
         '''
         Function for the training loop over the entire dataset.
 
-        ### Args
-        data: DataLoader - data for the training
+        :param data: DataLoader - data for the training
+        :type data: torch.utils.data.DataLoader, required
+        :return: tuple[list, list, list] - loss history, accuracy history, recording of the hidden layers
+        :rtype: tuple
         '''
 
         self.expand_config(data)
@@ -280,8 +284,10 @@ class Model(torch.nn.Module):
         '''
         Function for evaluating the network on the test-part of a dataset.
 
-        ### Args
-        data: DataLoader - data for the testing
+        :param data: DataLoader - data for the testing
+        :type data: torch.utils.data.DataLoader, required
+        :return: tuple[list, list, list] - loss history, accuracy history, recording of the hidden layers
+        :rtype: tuple
         '''
 
 
@@ -333,8 +339,9 @@ class Model(torch.nn.Module):
     ) -> None:
         '''
         Generates the config-values for the output shape of the individual layers in the network. Necessary for spike recording.
-        ### Args:
-        data: Dataloader
+       
+        :param data: Dataloader - data for the training
+        :type data: torch.utils.data.DataLoader, required
         '''
 
         x, _ =  next(iter(data))
