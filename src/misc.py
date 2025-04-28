@@ -14,7 +14,8 @@ from imports import tqdm
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
     '''
-    Function for checking if the working direcory is in fact the top-level directory of the 
+    Function for checking if the working direcory is in fact the top-level directory of the Git-Repo.
+    Tries to descend one folder
     '''
 
     if "SurrGrad-in-SNN" in os.getcwd():
@@ -22,12 +23,17 @@ def check_working_directory() -> bool:
     else:
         if "SurrGrad-in-SNN" in os.listdir():
             try:
-                os.chdir(os.getcwd()+"/SurrGrad-in-SNN")
+                os.chdir(os.path.join(os.getcwd(), "SurrGrad-in-SNN"))
             except:
                 raise LookupError("Could not find the folder SurrGrad-in-SNN in your current working directory. \
                                   Consider changing the working directory")
-        warnings.warn("Changed Working directory. Descended into \"SurrGrad-in-SNN\".")
-        return True    
+            warnings.warn("Changed Working directory. Descended into \"SurrGrad-in-SNN\".")
+            return True 
+        else:
+            warnings.warn("Could not find the folder SurrGrad-in-SNN in your current working directory. \
+                          No guarantees for working code from this point on.\
+                          Proceeding...")   
+            return False
 
 def resolve_gradient(config: dict) -> Callable:
     '''
@@ -98,6 +104,9 @@ def spk_rec_to_file(
     identifier: str or list[str] - Optional. Useful for saving the data with a custom filename
     path: str - Optional. Path where to save the data. Default data/rec/
     '''
+
+
+    # TODO: change path resolving with str.split() and os.path.join()
     now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     if isinstance(identifier, list):
         assert len(identifier) == 3
