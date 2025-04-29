@@ -10,6 +10,7 @@ from imports import plt
 # from grad import super_spike_21
 from imports import torch
 from imports import tqdm
+from imports import re
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
@@ -105,14 +106,16 @@ def spk_rec_to_file(
     path: str - Optional. Path where to save the data. Default data/rec/
     '''
 
+    # make path os-independent
+    path = make_path(path)
 
     # TODO: change path resolving with str.split() and os.path.join()
-    now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     if isinstance(identifier, list):
         assert len(identifier) == 3
     elif isinstance(identifier, str):
         identifier = [identifier + '-layer1.npz', identifier + '-layer2.npz', identifier + '-layer3.npz']
     elif identifier == None:
+        now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         identifier = [now + '-layer1.npz', now + '-layer2.npz', now + '-layer3.npz']
 
 
@@ -127,7 +130,7 @@ def spk_rec_to_file(
             elif rec.get_device() == -1:
                 layer[j] = rec.numpy().astype(np.int8)
             
-        np.savez_compressed(path + identifier[i], *layer)   
+        np.savez_compressed(os.path.join(path, identifier[i]), *layer)   
             
 
 # def get_test_array_sffn():
@@ -153,7 +156,7 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
     if len(loss) != 0:
         try:
             np.savetxt(
-                config["data_path"] + "/loss.txt",
+                make_path(config["data_path"],"loss.txt"),
                 loss,
                 fmt="%.8f"
             )
@@ -163,7 +166,7 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
         try:
             if len(acc) != 0:
                 np.savetxt(
-                    config["data_path"] + "/acc.txt",
+                    make_path(config["data_path"],"acc.txt"),
                     acc,
                     fmt="%.8f"
                 )
@@ -217,3 +220,21 @@ def get_shortest_observation(
             shortest = x.shape[0]
     
     return shortest # 307 in the whole dataset
+
+def make_path(path: str) -> os.PathLike:
+    '''
+    Function for creating cross-os-compatible paths from strings.
+    
+    :param path: String to be converted to os.PathLike
+    :type path: str or list of str, required
+    :return: os.PathLike object
+    '''
+    if path == isinstance(str):
+        path = [path]
+
+    path_lst = []
+    for part in path:
+        path = re.split(['/\\'], path)
+        path_lst.append(*part)
+    path = os.path.join(*path_lst)
+    return path

@@ -2,6 +2,7 @@ from imports import yaml
 from imports import torch
 from imports import tonic
 from imports import torchvision
+from misc import make_path
 
 ###############################
 ### OR SOME DATALOADER LEAK ###
@@ -54,12 +55,12 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
 
     # apply the transform to the datasets
     trainset = tonic.datasets.NMNIST(
-        save_to = config["data_path"],
+        save_to = make_path(config["data_path"]),
         transform = transform_train,
         train = True    
     )
     testset = tonic.datasets.NMNIST(
-        save_to = config["data_path"],
+        save_to = make_path(config["data_path"]),
         transform = transform_test,
         train = False
     )
@@ -71,12 +72,12 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
     
     cached_trainset = tonic.DiskCachedDataset(
         dataset = trainset, 
-        cache_path = config["cache_path"],
+        cache_path = make_path(config["cache_path"]),
     )
     
     cached_testset = tonic.DiskCachedDataset(
         dataset = testset,
-        cache_path = config["cache_path"]
+        cache_path = make_path(config["cache_path"])
     )
 
 
