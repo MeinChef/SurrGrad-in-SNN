@@ -223,7 +223,7 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
     if len(loss) != 0:
         try:
             np.savetxt(
-                make_path(config["data_path"],"loss.txt"),
+                make_path(config["data_path"] + "/loss.txt"),
                 loss,
                 fmt="%.8f"
             )
@@ -233,7 +233,7 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
         try:
             if len(acc) != 0:
                 np.savetxt(
-                    make_path(config["data_path"],"acc.txt"),
+                    make_path(config["data_path"] + "/acc.txt"),
                     acc,
                     fmt="%.8f"
                 )
@@ -245,11 +245,11 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
 def plot_loss_acc(config:dict) -> None:
     # load values from files
     loss = np.loadtxt(
-        make_path(config["data_path"],"loss.txt"),
+        make_path(config["data_path"] + "/loss.txt"),
     )
 
     acc = np.loadtxt(
-        make_path(config["data_path"],"acc.txt"),
+        make_path(config["data_path"] + "/acc.txt"),
     )
 
     assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
@@ -295,12 +295,14 @@ def make_path(path: str) -> os.PathLike:
     :type path: str or list of str, required
     :return: os.PathLike object
     '''
-    if path == isinstance(str):
+
+    if isinstance(path, str):
         path = [path]
 
     path_lst = []
     for part in path:
-        path = re.split(['/\\'], path)
-        path_lst.append(*part)
+        part = re.split(r'[/\\]', part)
+        for x in part:
+            path_lst.append(x)
     path = os.path.join(*path_lst)
     return path

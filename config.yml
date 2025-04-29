@@ -49,7 +49,7 @@ config_model:
     type: "sigmoid"
     alpha: null
     beta: null
-    slope: 2
+    slope: 25
     threshold: null
 
   # neuron configurations

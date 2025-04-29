@@ -24,7 +24,7 @@ def main() -> None:
         # model spikes in Memory usage after Training (~486 Batches a 128)
         model.test_loop(data = test)
 
-
+    # misc.plot_loss_acc(config_data)
     
 
 if __name__ == "__main__":

@@ -17,8 +17,11 @@ class Model(torch.nn.Module):
         :type config: dictionary, required
         '''
         super().__init__()
-        
+
         self.config = config
+        # set surrogate
+        self.surrogate = misc.resolve_gradient(config = self.config["surrogate"])
+        
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -55,7 +58,6 @@ class Model(torch.nn.Module):
         self.to(device = self.device)
 
         # use config to set essentials
-        self.surrogate = misc.resolve_gradient(config = self.config["surrogate"])
         self.loss = misc.resolve_loss(config = self.config["loss"])
         self.acc = misc.resolve_acc(config = self.config["accuracy"])
         self.optim = misc.resolve_optim(config = self.config["optimiser"], params = self.parameters())
@@ -249,8 +251,7 @@ class Model(torch.nn.Module):
 
         loss_hist = []
         acc_hist  = []
-        if self.config["record_hidden"]:
-            rec_list  = [[],[],[]]
+        rec_list  = [[],[],[]]
 
         # training loop
         for i, (x, target) in enumerate(data):
