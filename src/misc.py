@@ -11,6 +11,7 @@ from imports import plt
 from imports import torch
 from imports import tqdm
 from imports import re
+from imports import functional
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
@@ -32,7 +33,7 @@ def check_working_directory() -> bool:
             return True 
         else:
             warnings.warn("Could not find the folder SurrGrad-in-SNN in your current working directory. \
-                          No guarantees for working code from this point on.\
+                          No guarantees for working code from this point on.\n\
                           Proceeding...")   
             return False
 
@@ -42,29 +43,95 @@ def resolve_gradient(config: dict) -> Callable:
     for further use.
     '''
 
-    name = config["surrogate"].lower()
+    name = config["type"].lower()
 
     if name == "atan":
-        return surrogate.atan(config["surrogate_arg"][0])
+        return surrogate.atan(config["alpha"])
     elif name == "fast_sigmoid":
-        return surrogate.fast_sigmoid(config["surrogate_arg"][0])
+        return surrogate.fast_sigmoid(config["slope"])
     elif name == "heavside":
         return surrogate.heaviside()
     elif name == "sigmoid":
-        return surrogate.sigmoid(config["surrogate_arg"][0])
+        return surrogate.sigmoid(config["slope"])
     elif name == "spike_rate_escape":
-        return surrogate.spike_rate_escape(config["surrogate_arg"][0], config["surrogate_arg"][1])
+        return surrogate.spike_rate_escape(config["beta"], config["slope"])
     elif name == "straight_through":
         return surrogate.straight_through_estimator()
     elif name == "triangular":
-        return surrogate.triangular(config["surrogate_arg"][0])
+        return surrogate.triangular(config["threshold"])
     elif name == "super_spike_21":
         raise NotImplementedError()
         # return super_spike_21(config["surrogate_arg"][0],config["surrogate_arg"][1],config["surrogate_arg"][2])
     else:
         raise NameError("The surrogate function specified in config is unresolveable. Check source code and typos")
 
-def resolve_encoding(config: dict) -> Callable:
+def resolve_loss(config: dict) -> Callable:
+    '''
+    Function for resolving the loss function, given as a string in config.yml, and returning a function, with proper fromatting
+    for further use.
+    '''
+
+    name = config["type"].lower()
+
+    if name == "ce_temporal":
+        return functional.loss.ce_temporal_loss(
+            inverse = config["inverse"],
+        )
+    elif name == "ce_rate":
+        return functional.loss.ce_rate_loss()
+    elif name == "mse_temporal":
+        return functional.loss.mse_temporal_loss(
+            tolerance = config["tolerance"]
+            )
+    elif name == "mse_count":
+        return functional.loss.mse_count_loss(
+            correct_rate = config["correct_rate"],
+            incorrect_rate = config["incorrect_rate"]
+        )
+    else:
+        raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
+
+def resolve_acc(config: dict) -> Callable:
+    '''
+    Function for resolving the accuracy function, given as a string in config.yml, and returning a function, with proper fromatting
+    for further use.
+    '''
+
+    name = config["type"].lower()
+
+    if name == "rate":
+        return functional.acc.accuracy_rate
+    elif name == "temporal":
+        return functional.acc.accuracy_temporal
+    else:
+        raise NameError("The accuracy function specified in config is unresolveable. Check source code and typos")
+
+def resolve_optim(config: dict, params) -> Callable:
+    '''
+    Function for resolving the optimizer, given as a string in config.yml, and returning a function, with proper fromatting
+    for further use.
+
+    :param config: config dictionary
+    :type config: dict
+    
+    :param params: parameters of the model
+    :type params: ParamT
+
+    :return: optimizer
+    '''
+
+    name = config["type"].lower()
+
+    if name == "adam":
+        return torch.optim.Adam(
+            params = params,
+            lr = config["learning_rate"],
+            betas = (config["betas"][0], config["betas"][1])
+        )
+    else:
+        raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
+
+def resolve_encoding_map(config: dict) -> Callable:
     
     name = config["target"].lower()
 
@@ -100,10 +167,14 @@ def spk_rec_to_file(
     '''
     Function for saving the spike recording of the hidden layers into a file on disk.
     
-    ### Args:
-    data: list - list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-    identifier: str or list[str] - Optional. Useful for saving the data with a custom filename
-    path: str - Optional. Path where to save the data. Default data/rec/
+    :param data: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
+    :type data: list, required
+    
+    :param identifier: Useful for saving the data with a custom filename
+    :type identifier: str or list[str], optional
+
+    :param path: Path where to save the data. Default data/rec/
+    :type path: str, optional
     '''
 
     # make path os-independent
@@ -131,27 +202,23 @@ def spk_rec_to_file(
                 layer[j] = rec.numpy().astype(np.int8)
             
         np.savez_compressed(os.path.join(path, identifier[i]), *layer)   
-            
-
-# def get_test_array_sffn():
-#     layer1 = [torch.full((20,), 0, dtype = torch.float32), torch.full((15,), 1, dtype = torch.float32), torch.full((10,), 2, dtype = torch.float32)]
-#     layer2 = [torch.full((20,), 1, dtype = torch.float32), torch.full((15,), 2, dtype = torch.float32), torch.full((10,), 0, dtype = torch.float32)]
-#     layer3 = [torch.full((20,), 2, dtype = torch.float32), torch.full((15,), 0, dtype = torch.float32), torch.full((10,), 1, dtype = torch.float32)]
-#     return [layer1, layer2, layer3]
-
-# liste = get_test_array_sffn()
-# spk_rec_to_file(liste)
 
 def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list,list,list] = None) -> None:
-    """
+    '''
     Saves the output from the model to a file, human-readable.
 
-    ### Arguments
-    config: dict - config dictionary
-    loss: list - list of loss values
-    acc: list - list of accuracy values
-    spk_rec: list - optional. spk_rec of all layers 
-    """
+    :param config: config dictionary
+    :type config: dict
+    
+    :param loss: list of loss values
+    :type loss: list
+    
+    :param acc: list of accuracy values
+    :type acc: list
+
+    :param spk_rec: spk_rec of all layers 
+    :type spk_rec: list, optional
+    '''
 
     if len(loss) != 0:
         try:
@@ -176,14 +243,13 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
     
 
 def plot_loss_acc(config:dict) -> None:
-    breakpoint()
     # load values from files
     loss = np.loadtxt(
-        config["data_path"] + "/loss.txt"
+        make_path(config["data_path"],"loss.txt"),
     )
 
     acc = np.loadtxt(
-        config["data_path"] + "/acc.txt"
+        make_path(config["data_path"],"acc.txt"),
     )
 
     assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
@@ -211,9 +277,9 @@ def plot_loss_acc(config:dict) -> None:
 def get_shortest_observation(
         data: torch.utils.data.DataLoader
 ) -> int:
-    """
+    '''
     Function for getting the shortest observation in the dataset.
-    """
+    '''
     shortest = 2**32
     for x, y in tqdm.tqdm(data):
         if x.shape[0] < shortest:

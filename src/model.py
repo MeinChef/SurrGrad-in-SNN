@@ -2,6 +2,7 @@ from imports import Callable
 from imports import torch
 from imports import snntorch as snn
 from imports import functional # snntorch.functional
+from imports import surrogate # snntorch.surrogate
 import misc
 
 class Model(torch.nn.Module):
@@ -18,15 +19,18 @@ class Model(torch.nn.Module):
         super().__init__()
         
         self.config = config
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-        # self.device = torch.device("cpu")
-        self.surrogate = misc.resolve_gradient(config = self.config)
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else: 
+            self.device = torch.device("cpu")
 
         # the actual network
         self.connect1 = torch.nn.Conv2d(2, 12, 5)
         self.connect2 = torch.nn.MaxPool2d(2)
         self.neuron1 = snn.Leaky(
-            beta = config['beta'], 
+            beta = config["neuron"]["beta"], 
             spike_grad = self.surrogate, 
             init_hidden = False
         )
@@ -34,7 +38,7 @@ class Model(torch.nn.Module):
         self.connect3 = torch.nn.Conv2d(12, 32, 5)
         self.connect4 = torch.nn.MaxPool2d(2)
         self.neuron2 = snn.Leaky(
-            beta = config['beta'], 
+            beta = config["neuron"]["beta"], 
             spike_grad = self.surrogate, 
             init_hidden = False
         )
@@ -42,7 +46,7 @@ class Model(torch.nn.Module):
         self.connect5 = torch.nn.Flatten()
         self.connect6 = torch.nn.Linear(32*5*5, 10)
         self.neuron3 = snn.Leaky(
-            beta = config['beta'], 
+            beta = config["neuron"]["beta"], 
             spike_grad = self.surrogate, 
             init_hidden = False
         )
@@ -50,13 +54,36 @@ class Model(torch.nn.Module):
         # send to gpu
         self.to(device = self.device)
 
+        # use config to set essentials
+        self.surrogate = misc.resolve_gradient(config = self.config["surrogate"])
+        self.loss = misc.resolve_loss(config = self.config["loss"])
+        self.acc = misc.resolve_acc(config = self.config["accuracy"])
+        self.optim = misc.resolve_optim(config = self.config["optimiser"], params = self.parameters())
 
+
+
+    ##########################
+    #### Setter functions ####
+    ##########################
+    
+    def set_surrogate(
+        self,
+        surrogate: Callable = surrogate.fast_sigmoid(slope = 25)
+    ): 
+        '''
+        Function to set the surrogate gradient to be then used internally.
+        
+        :param surrogate: A Class, whose caller takes (spk_out, targets)
+        :type surrogate: Callable, required 
+        '''
+        self.surrogate = surrogate
+    
     def set_loss(
         self,
-        loss: Callable = functional.loss.mse_temporal_loss(target_is_time = True)
+        loss: Callable = functional.loss.mse_temporal_loss()
     ) -> None:
         '''
-        Function to set the loss function to be used internally.
+        Function to set the loss function to be then used internally.
         
         :param loss: A Class, whose caller takes (spk_out, targets)
         :type loss: Callable, required 
@@ -69,7 +96,7 @@ class Model(torch.nn.Module):
         acc: Callable = functional.acc.accuracy_temporal
     ) -> None:
         '''
-        Function to set the accuarcy function to be used internally.
+        Function to set the accuarcy function to be then used internally.
         
         :param acc: A class or function, whose caller receives (spk_out, targets)
         :type acc: Callable, required
@@ -81,13 +108,17 @@ class Model(torch.nn.Module):
         optim: Callable
     ) -> None:
         '''
-        Function to set the Optimiser to be used internally
+        Function to set the Optimiser to be then used internally
 
         :param optim: an already initalised Optimiser
         :type optim: Callable, required
         '''
         self.optim = optim
 
+
+    ########################
+    #### Main functions ####
+    ########################
 
     def forward(
         self, 
@@ -125,10 +156,6 @@ class Model(torch.nn.Module):
 
         # initialise arrays for recording the hidden layers
         if self.config["record_hidden"]:
-            
-            # self.config["layer1"][0] = time_steps
-            # self.config["layer2"][0] = time_steps
-            # self.config["layer3"][0] = time_steps
 
             # on gpu might be a tiny bit faster, but idk if that's worth it
             rec_spk1 = torch.empty(
@@ -222,7 +249,8 @@ class Model(torch.nn.Module):
 
         loss_hist = []
         acc_hist  = []
-        rec_list  = [[],[],[]]
+        if self.config["record_hidden"]:
+            rec_list  = [[],[],[]]
 
         # training loop
         for i, (x, target) in enumerate(data):
@@ -270,9 +298,6 @@ class Model(torch.nn.Module):
 
         # TODO: gc.collect()?
         torch.cuda.empty_cache()
-            
-
-
         return loss_hist, acc_hist, rec_list
     
 
@@ -333,6 +358,10 @@ class Model(torch.nn.Module):
         return loss_hist, acc_hist, rec_list
 
 
+    ##########################
+    #### Helper functions ####
+    ##########################
+
     def expand_config(
         self, 
         data: torch.utils.data.DataLoader
@@ -368,8 +397,3 @@ class Model(torch.nn.Module):
         self.config["layer1"] = list(mem1.shape)
         self.config["layer2"] = list(mem2.shape)
         self.config["layer3"] = list(mem3.shape)
-
-        # insert value 0 at index 0, for overwriting with time_steps in forward
-        # self.config["layer1"].insert(0, 0)
-        # self.config["layer2"].insert(0, 0)
-        # self.config["layer3"].insert(0, 0)

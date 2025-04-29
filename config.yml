@@ -13,29 +13,58 @@ config_data:
 
 config_model:
 
-  # available in snntorch: 
-      # atan [arg: alpha]
-      # fast_sigmoid [arg: slope]
-      # heavside [arg: None]
-      # sigmoid [arg: slope]
-      # spike_rate_escape [arg: [beta, slope]]
-      # straight_through [arg: None]
-      # triangular [arg: threshold]
+  # hyperparameters
+  loss:
+    # loss functions taken from snntorch
+    # available losses: 
+      # ce_temporal: [arg: invers]
+      # ce_rate: [arg: none]
+      # mse_temporal: [arg: tolerance]
+      # mse_rate: [arg: correct_rate, incorrect_rate]
+    type: "mse_temporal"
+    correct_rate: null
+    inverse: null
+    incorrect_rate: null
+    tolerance: 3
+
+  accuracy:
+    # available accuracies: rate, temporal
+    type: "temporal"
   
-  # available in this code: 
-      # super_spike_21 [arg: [slope, alpha, beta]]
-  surrogate: "sigmoid"
-  surrogate_arg: [2]
-  learning_rate: 0.03
+  optimiser:
+    # available optimisers: adam
+    type: "adam" 
+    learning_rate: 0.03
+    betas: [0.9, 0.99]
+  
+  surrogate:
+    # available in snntorch: 
+    # atan [arg: alpha]
+    # fast_sigmoid [arg: slope]
+    # heavside [arg: None]
+    # sigmoid [arg: slope]
+    # spike_rate_escape [args: beta, slope]
+    # straight_through [arg: None]
+    # triangular [arg: threshold]
+    type: "sigmoid"
+    alpha: null
+    beta: null
+    slope: 2
+    threshold: null
+
+  # neuron configurations
+  neuron:
+    beta: 0.5 # of neurons
+
+  # training parametres
   epochs: 1
-  beta: 0.5 # of neurons
+  # partial training in minibatches. to disable set to -1
+  partial_training: -1
+
 
   # record hidden layers?
   record_train: False
   record_test: False
 
-
-  # partial training in minibatches. to disable set to -1
-  partial_training: -1
   DEBUG: False
   PROGRESS: True
