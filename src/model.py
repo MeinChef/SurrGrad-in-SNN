@@ -398,3 +398,8 @@ class Model(torch.nn.Module):
         self.config["layer1"] = list(mem1.shape)
         self.config["layer2"] = list(mem2.shape)
         self.config["layer3"] = list(mem3.shape)
+
+        if self.config["DEBUG"]:
+            print("Shape of layer1:", self.config["layer1"])
+            print("Shape of layer2:", self.config["layer2"])
+            print("Shape of layer3:", self.config["layer3"])

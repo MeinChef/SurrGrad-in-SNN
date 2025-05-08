@@ -85,6 +85,7 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
         print("Sensor:", sensor)
         print("Rough Size of Dataset in Memory:", len(pickle.dumps(cached_trainset)) + len(pickle.dumps(cached_testset)))
         
+    torch.manual_seed(config["seed"])
     # prepare them for training, 
     trainloader = torch.utils.data.DataLoader(
         dataset = cached_trainset, 
