@@ -21,6 +21,7 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
 
 
     sensor = tonic.datasets.NMNIST.sensor_size
+    num_classes = len(tonic.datasets.NMNIST.classes)
 
     # accumulate events to discrete "frames"
     transform_train = tonic.transforms.Compose(
@@ -106,4 +107,4 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
         pin_memory = True
     )
 
-    return trainloader, testloader
+    return trainloader, testloader, num_classes

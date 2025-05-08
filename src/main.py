@@ -8,8 +8,9 @@ from model import Model
 
 def main() -> None:
     config_data, config_model = data.load_config()
-    train, test = data.data_prep(config_data)
+    train, test, num_classes = data.data_prep(config_data)
 
+    config_model["num_classes"] = num_classes
     model = Model(config = config_model)
 
     # training
@@ -21,8 +22,11 @@ def main() -> None:
             loss,
             acc
         )
-        # model spikes in Memory usage after Training (~486 Batches a 128)
+        # model spikes in Memory usage after Training (~486 Batches a 128) -> that was due to
+        # record_test = True, stupid me
         model.test_loop(data = test)
+        # reset counter needed for recording hidden layers
+        model.reset()
 
     # misc.plot_loss_acc(config_data)
     

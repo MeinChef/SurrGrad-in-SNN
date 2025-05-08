@@ -1,4 +1,5 @@
 from imports import Callable
+from imports import warnings
 from imports import torch
 from imports import snntorch as snn
 from imports import functional # snntorch.functional
@@ -158,10 +159,13 @@ class Model(torch.nn.Module):
 
         # initialise arrays for recording the hidden layers
         if self.config["record_hidden"]:
-
+            
+            #
+            mask = self.mask_batch(x)
             # on gpu might be a tiny bit faster, but idk if that's worth it
             rec_spk1 = torch.empty(
-                [time_steps, *self.config["layer1"]],
+                # sth like [time_steps, config[classes]*config[samples_per_class], *self.config["layer1"][1::]]
+                [time_steps, *self.config["layer1"][1::]],
                 dtype = torch.float32,
                 # device = self.device,
                 device = torch.device("cpu"),
@@ -183,6 +187,11 @@ class Model(torch.nn.Module):
                 device = torch.device("cpu"),
                 requires_grad = False
             )
+
+            #TODO: create mask (should work with x==class)
+            # and loop over it
+            # look at torch.bincount(), might be helpful
+
 
         # the actual forward pass
         for step in range(time_steps):
@@ -399,7 +408,36 @@ class Model(torch.nn.Module):
         self.config["layer2"] = list(mem2.shape)
         self.config["layer3"] = list(mem3.shape)
 
+        if self.config["sample_per_record"]:
+            self.config["counter"] = torch.full(
+                size = self.config["num_classes"],
+                fill_value = self.config["samples_per_class"],
+                out = torch.uint8
+            )
+
         if self.config["DEBUG"]:
             print("Shape of layer1:", self.config["layer1"])
             print("Shape of layer2:", self.config["layer2"])
             print("Shape of layer3:", self.config["layer3"])
+
+
+    def reset(self) -> bool:
+        '''
+        Some c
+
+        :return: Whether the resetting was succesful or failed
+        :rtype: bool
+        '''
+
+        if not self.config["counter"]:
+            warnings.warn("Counter does not exist, probably bad initialisation \
+            or recording has not been requested.\nSkipping reset...")
+            return False
+        
+        if self.config["counter"].is_nonzero():
+            warnings.warn(f"Class \
+                {self.config["counter"].nonzero(as_tuple = True)[0]} \
+            was not found the specified amount of times \
+            in the data to be recorded.\nProceeding...")
+
+        self.config["counter"].fill_(self.config["samples_per_class"])

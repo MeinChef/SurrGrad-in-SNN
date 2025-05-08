@@ -66,7 +66,7 @@ config_model:
   # record hidden layers?
   record_train: False
   record_test: False
-  samples_per_record: 10
+  samples_per_class: 10
 
   DEBUG: True
   PROGRESS: True
