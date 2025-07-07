@@ -4,14 +4,15 @@ from imports import tonic
 from imports import torchvision
 from misc import make_path
 
-###############################
-### OR SOME DATALOADER LEAK ###
-###############################
 
 # load the config.yml
 def load_config(path: str = "config.yml") -> tuple[dict, dict]:
     with open(path, "r") as file:
         configs = yaml.safe_load(file)
+
+    # set the default values for hidden variables
+    configs["config_model"]["debugged"] = False
+    configs["config_model"]["summary"] = False
 
     return configs["config_data"], configs["config_model"]
 
