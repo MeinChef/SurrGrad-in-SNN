@@ -103,6 +103,7 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
         dataset = cached_testset, 
         batch_size = config["batch_size"], 
         collate_fn = tonic.collation.PadTensors(batch_first = False),
+        shuffle = True,
         num_workers = config["worker"],
         prefetch_factor = config["prefetch"],
         pin_memory = True
