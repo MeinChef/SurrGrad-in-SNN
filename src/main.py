@@ -1,8 +1,5 @@
 import misc
 import data
-from imports import torch
-from imports import time
-from imports import functional
 from model import Model
 
 
