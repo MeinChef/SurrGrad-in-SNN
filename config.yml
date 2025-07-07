@@ -60,13 +60,13 @@ config_model:
   # training parametres
   epochs: 1
   # partial training in minibatches. to disable set to -1
-  partial_training: -1
+  partial_training: 50
 
 
   # record hidden layers?
   record_train: False
-  record_test: False
+  record_test: True
   samples_per_class: 10
 
-  DEBUG: True
+  DEBUG: False
   PROGRESS: True
