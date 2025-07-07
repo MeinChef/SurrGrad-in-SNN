@@ -28,3 +28,4 @@ from snntorch import surrogate
 
 # visualization
 import matplotlib.pyplot as plt
+import torchinfo
