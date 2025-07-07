@@ -4,6 +4,7 @@ from imports import torch
 from imports import snntorch as snn
 from imports import functional # snntorch.functional
 from imports import surrogate # snntorch.surrogate
+from imports import torchinfo
 import misc
 
 class Model(torch.nn.Module):
@@ -64,65 +65,11 @@ class Model(torch.nn.Module):
         self.optim = misc.resolve_optim(config = self.config["optimiser"], params = self.parameters())
 
 
-
-    ##########################
-    #### Setter functions ####
-    ##########################
-    
-    def set_surrogate(
-        self,
-        surrogate: Callable = surrogate.fast_sigmoid(slope = 25)
-    ): 
-        '''
-        Function to set the surrogate gradient to be then used internally.
-        
-        :param surrogate: A Class, whose caller takes (spk_out, targets)
-        :type surrogate: Callable, required 
-        '''
-        self.surrogate = surrogate
-    
-    def set_loss(
-        self,
-        loss: Callable = functional.loss.mse_temporal_loss()
-    ) -> None:
-        '''
-        Function to set the loss function to be then used internally.
-        
-        :param loss: A Class, whose caller takes (spk_out, targets)
-        :type loss: Callable, required 
-        '''
-        self.loss = loss
-
-
-    def set_acc(
-        self,
-        acc: Callable = functional.acc.accuracy_temporal
-    ) -> None:
-        '''
-        Function to set the accuarcy function to be then used internally.
-        
-        :param acc: A class or function, whose caller receives (spk_out, targets)
-        :type acc: Callable, required
-        '''
-        self.acc = acc
-
-    def set_optim(
-        self,
-        optim: Callable
-    ) -> None:
-        '''
-        Function to set the Optimiser to be then used internally
-
-        :param optim: an already initalised Optimiser
-        :type optim: Callable, required
-        '''
-        self.optim = optim
-
-
     ########################
     #### Main functions ####
     ########################
 
+    @torch.compile
     def forward(
         self, 
         x: torch.Tensor
@@ -161,7 +108,7 @@ class Model(torch.nn.Module):
         if self.config["record_hidden"]:
             
             #
-            mask = self.mask_batch(x)
+            # mask = self.mask_batch(x)
             # on gpu might be a tiny bit faster, but idk if that's worth it
             rec_spk1 = torch.empty(
                 # sth like [time_steps, config[classes]*config[samples_per_class], *self.config["layer1"][1::]]
@@ -188,9 +135,17 @@ class Model(torch.nn.Module):
                 requires_grad = False
             )
 
-            #TODO: create mask (should work with x==class)
-            # and loop over it
-            # look at torch.bincount(), might be helpful
+        # Shape of Tensor while passing through the network:
+        # x     [time_steps, minibatch, 2, 34, 34]
+        # con1      [minibatch, 12, 30, 30]
+        # con2      [minibatch, 12, 15, 15]
+        # spk1      [minibatch, 12, 15, 15]
+        # con3      [minibatch, 32, 11, 11]
+        # con4      [minibatch, 32, 5, 5]
+        # spk2      [minibatch, 32, 5, 5]
+        # con5      [minibatch, 800]
+        # con6      [minibatch, 10]
+        # spk3      [minibatch, 10]
 
 
         # the actual forward pass
@@ -214,7 +169,7 @@ class Model(torch.nn.Module):
                 rec_spk3[step] = spk3.detach().cpu()
 
 
-        if self.config["DEBUG"]:
+        if self.config["DEBUG"] and not self.config["debugged"]:
             print("Size of mem1:", mem1.shape)
             print("Size of mem2:", mem2.shape)
             print("Size of mem3:", mem3.shape)
@@ -228,6 +183,8 @@ class Model(torch.nn.Module):
 
             print("Location of spk:", spk1.get_device())
             print("location of mem:", mem1.get_device())
+
+            self.config["debugged"] = True
 
         # return the hidden recording, if so desired
         if self.config["record_hidden"]:
@@ -266,9 +223,21 @@ class Model(torch.nn.Module):
         for i, (x, target) in enumerate(data):
             x = x.to(self.device)
             target = target.to(self.device)
-            
+
             if self.config["DEBUG"]:
                 print("Type of Data:", x.dtype, "\non GPU:", x.get_device(), "\nShape of Data:", x.shape)
+
+            if not self.config["summary"]:
+                # print a summary of the model
+                torchinfo.summary(
+                    model = self,
+                    input_size = x.shape,
+                    batch_dim = x.shape[1],
+                    device = self.device,
+                    col_names = ["input_size", "output_size", "num_params", "trainable"]
+                )
+
+                self.config["summary"] = True
             
             # differentiate between recording hidden states or not
             if self.config["record_hidden"]:
@@ -281,7 +250,7 @@ class Model(torch.nn.Module):
 
             else:
                 x, = self.forward(x)
-
+            
             # loss and accuracy calculations
             loss = self.loss(x, target)
             acc = self.acc(x, target)
@@ -349,11 +318,20 @@ class Model(torch.nn.Module):
                 # differentiate between recording hidden states or not
                 if self.config["record_hidden"]:
                     x, rec = self.forward(x)
+                    breakpoint()
+                    #TODO: create mask (should work with x==class)
+                    # and loop over it
+                    # look at torch.bincount(), might be helpful for keeping track of which class is there how often
+                    # mask = self.create_mask(target)
+                    # mask can be applied via
+                    # rec[0][:, mask]
+
 
                     # separate the recordings to the individual layers
                     rec_list[0].append(rec[0])
                     rec_list[1].append(rec[1])
                     rec_list[2].append(rec[2])
+
         
                 else:
                     x, = self.forward(x)
@@ -366,6 +344,125 @@ class Model(torch.nn.Module):
                 acc_hist.append(acc)
 
         return loss_hist, acc_hist, rec_list
+
+    def create_mask(
+            self,
+            target: torch.Tensor
+    ) -> torch.Tensor:
+
+        '''
+        Function to create a mask for the hidden layer recordings.
+
+        :param target: tensor - the target labels for the minibatch
+        :type target: torch.Tensor, required
+        :return: mask - a boolean mask for the hidden layer recordings
+        :rtype: torch.Tensor
+        '''
+
+
+        mask = torch.zeros_like(target, dtype = torch.bool)
+
+        if (self.config["counter"] == 0).all():
+            # all classes have been recorded the specified amount of times
+            # no need to create a mask
+            return mask
+
+        indices = []
+        for cls in range(self.config["num_classes"]):
+            if self.config["counter"][cls] == 0:
+                # class has been already recorded
+                continue
+            else:
+                # get indices for the class
+                # since target is a 1D tensor, we will get one 1D tensor with indices
+                idx = torch.nonzero(target == cls, as_tuple = True)[0]
+                idx = idx[:self.config["counter"][cls]]
+
+                # substract the count of found samples
+                self.config["counter"][cls] -= len(idx)
+                indices.append(idx)
+
+        for idx in indices:
+            # add the indices to the mask
+            mask[idx] = True
+                    
+        return mask
+
+
+    ##########################
+    #### Setter functions ####
+    ##########################
+    
+    def set_surrogate(
+        self,
+        surrogate: Callable = surrogate.fast_sigmoid(slope = 25)
+    ): 
+        '''
+        Function to set the surrogate gradient to be then used internally.
+        
+        :param surrogate: A Class, whose caller takes (spk_out, targets)
+        :type surrogate: Callable, required 
+        '''
+        self.surrogate = surrogate
+    
+    def set_loss(
+        self,
+        loss: Callable = functional.loss.mse_temporal_loss()
+    ) -> None:
+        '''
+        Function to set the loss function to be then used internally.
+        
+        :param loss: A Class, whose caller takes (spk_out, targets)
+        :type loss: Callable, required 
+        '''
+        self.loss = loss
+
+
+    def set_acc(
+        self,
+        acc: Callable = functional.acc.accuracy_temporal
+    ) -> None:
+        '''
+        Function to set the accuarcy function to be then used internally.
+        
+        :param acc: A class or function, whose caller receives (spk_out, targets)
+        :type acc: Callable, required
+        '''
+        self.acc = acc
+
+    def set_optim(
+        self,
+        optim: Callable
+    ) -> None:
+        '''
+        Function to set the Optimiser to be then used internally
+
+        :param optim: an already initalised Optimiser
+        :type optim: Callable, required
+        '''
+        self.optim = optim
+
+
+    ##########################
+    #### Getter functions ####
+    ##########################
+
+    def get_acc(self) -> Callable:
+        return self.acc
+    
+    def get_config(self) -> dict:
+        return self.config
+    
+    def get_loss(self) -> Callable:
+        return self.loss
+    
+    def get_optim(self) -> Callable:
+        return self.optim
+    
+    def get_surrogate(self) -> Callable:
+        return self.surrogate
+
+
 
 
     ##########################
@@ -408,11 +505,11 @@ class Model(torch.nn.Module):
         self.config["layer2"] = list(mem2.shape)
         self.config["layer3"] = list(mem3.shape)
 
-        if self.config["sample_per_record"]:
+        if self.config["samples_per_class"]:
             self.config["counter"] = torch.full(
-                size = self.config["num_classes"],
+                size = (self.config["num_classes"],),
                 fill_value = self.config["samples_per_class"],
-                out = torch.uint8
+                dtype = torch.uint8
             )
 
         if self.config["DEBUG"]:
@@ -423,7 +520,7 @@ class Model(torch.nn.Module):
 
     def reset(self) -> bool:
         '''
-        Some c
+        Resets the counter for the recording of hidden layers.
 
         :return: Whether the resetting was succesful or failed
         :rtype: bool
@@ -438,6 +535,7 @@ class Model(torch.nn.Module):
             warnings.warn(f"Class \
                 {self.config["counter"].nonzero(as_tuple = True)[0]} \
             was not found the specified amount of times \
-            in the data to be recorded.\nProceeding...")
+            in the data to be recorded.\nProceeding with reset...")
 
         self.config["counter"].fill_(self.config["samples_per_class"])
+        return True
