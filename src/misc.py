@@ -1,9 +1,7 @@
 from imports import os
 from imports import warnings
-from imports import typing
 from imports import surrogate
 from imports import Callable
-from imports import surrogate
 from imports import numpy as np
 from imports import datetime
 from imports import plt
@@ -26,7 +24,8 @@ def check_working_directory() -> bool:
         if "SurrGrad-in-SNN" in os.listdir():
             try:
                 os.chdir(os.path.join(os.getcwd(), "SurrGrad-in-SNN"))
-            except:
+            except Exception as e:
+                print(e)
                 raise LookupError("Could not find the folder SurrGrad-in-SNN in your current working directory. \
                                   Consider changing the working directory")
             warnings.warn("Changed Working directory. Descended into \"SurrGrad-in-SNN\".")
@@ -185,7 +184,7 @@ def spk_rec_to_file(
         assert len(identifier) == 3
     elif isinstance(identifier, str):
         identifier = [identifier + '-layer1.npz', identifier + '-layer2.npz', identifier + '-layer3.npz']
-    elif identifier == None:
+    elif identifier is None:
         now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         identifier = [now + '-layer1.npz', now + '-layer2.npz', now + '-layer3.npz']
 
@@ -227,7 +226,8 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
                 loss,
                 fmt="%.8f"
             )
-        except:
+        except Exception as e:
+            print(e)
             breakpoint()
     if acc:
         try:
@@ -237,7 +237,8 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
                     acc,
                     fmt="%.8f"
                 )
-        except:
+        except Exception as e:
+            print(e)
             breakpoint()
 
     
@@ -293,7 +294,8 @@ def make_path(path: str) -> os.PathLike:
     
     :param path: String to be converted to os.PathLike
     :type path: str or list of str, required
-    :return: os.PathLike object
+    :return: Path in the correct format for the current OS
+    :rtype: os.PathLike object
     '''
 
     if isinstance(path, str):
@@ -302,7 +304,6 @@ def make_path(path: str) -> os.PathLike:
     path_lst = []
     for part in path:
         part = re.split(r'[/\\]', part)
-        for x in part:
-            path_lst.append(x)
+        path_lst.extend(part)
     path = os.path.join(*path_lst)
     return path
