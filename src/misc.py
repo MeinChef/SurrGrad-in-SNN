@@ -288,6 +288,19 @@ def get_shortest_observation(
     
     return shortest # 307 in the whole dataset
 
+def get_longest_observation(
+        data: torch.utils.data.DataLoader
+) -> int:
+    '''
+    Function for getting the longest observation in the dataset.
+    '''
+    longest = 0
+    for x, y in tqdm.tqdm(data):
+        if x.shape[0] > longest:
+            longest = x.shape[0]
+    
+    return longest # 314 in the whole dataset
+
 def make_path(path: str) -> os.PathLike:
     '''
     Function for creating cross-os-compatible paths from strings.
