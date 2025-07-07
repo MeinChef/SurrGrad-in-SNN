@@ -4,7 +4,8 @@ from imports import torch
 from imports import snntorch as snn
 from imports import functional # snntorch.functional
 from imports import surrogate # snntorch.surrogate
-from imports import torchinfo
+# from imports import torchinfo
+from imports import tqdm
 import misc
 
 class Model(torch.nn.Module):
@@ -69,7 +70,6 @@ class Model(torch.nn.Module):
     #### Main functions ####
     ########################
 
-    @torch.compile
     def forward(
         self, 
         x: torch.Tensor
@@ -106,13 +106,9 @@ class Model(torch.nn.Module):
 
         # initialise arrays for recording the hidden layers
         if self.config["record_hidden"]:
-            
-            #
-            # mask = self.mask_batch(x)
-            # on gpu might be a tiny bit faster, but idk if that's worth it
+            # on gpu might be a tiny bit faster, but the memory footprint is def. not worth it
             rec_spk1 = torch.empty(
-                # sth like [time_steps, config[classes]*config[samples_per_class], *self.config["layer1"][1::]]
-                [time_steps, *self.config["layer1"][1::]],
+                [time_steps, *self.config["layer1"]],
                 dtype = torch.float32,
                 # device = self.device,
                 device = torch.device("cpu"),
@@ -169,6 +165,7 @@ class Model(torch.nn.Module):
                 rec_spk3[step] = spk3.detach().cpu()
 
 
+
         if self.config["DEBUG"] and not self.config["debugged"]:
             print("Size of mem1:", mem1.shape)
             print("Size of mem2:", mem2.shape)
@@ -220,7 +217,7 @@ class Model(torch.nn.Module):
         rec_list  = [[],[],[]]
 
         # training loop
-        for i, (x, target) in enumerate(data):
+        for i, (x, target) in tqdm.tqdm(enumerate(data)):
             x = x.to(self.device)
             target = target.to(self.device)
 
@@ -229,13 +226,13 @@ class Model(torch.nn.Module):
 
             if not self.config["summary"]:
                 # print a summary of the model
-                torchinfo.summary(
-                    model = self,
-                    input_size = x.shape,
-                    batch_dim = x.shape[1],
-                    device = self.device,
-                    col_names = ["input_size", "output_size", "num_params", "trainable"]
-                )
+                # torchinfo.summary(
+                #     model = self,
+                #     input_size = x.shape,
+                #     batch_dim = 1,
+                #     device = self.device,
+                #     col_names = ["input_size", "output_size", "num_params", "trainable"]
+                # )
 
                 self.config["summary"] = True
             
@@ -308,7 +305,7 @@ class Model(torch.nn.Module):
         with torch.no_grad():
             self.train(False)
 
-            for x, target in data:
+            for x, target in tqdm.tqdm(data):
                 x = x.to(self.device)
                 target = target.to(self.device)
                 
@@ -318,20 +315,15 @@ class Model(torch.nn.Module):
                 # differentiate between recording hidden states or not
                 if self.config["record_hidden"]:
                     x, rec = self.forward(x)
-                    breakpoint()
-                    #TODO: create mask (should work with x==class)
-                    # and loop over it
-                    # look at torch.bincount(), might be helpful for keeping track of which class is there how often
-                    # mask = self.create_mask(target)
-                    # mask can be applied via
-                    # rec[0][:, mask]
 
+                    # create a mask for the hidden layer recordings
+                    mask = self.create_mask(target)
 
                     # separate the recordings to the individual layers
-                    rec_list[0].append(rec[0])
-                    rec_list[1].append(rec[1])
-                    rec_list[2].append(rec[2])
-
+                    rec_list[0].append(rec[0][:, mask])
+                    rec_list[1].append(rec[1][:, mask])
+                    rec_list[2].append(rec[2][:, mask])
+                    break
         
                 else:
                     x, = self.forward(x)
@@ -360,7 +352,11 @@ class Model(torch.nn.Module):
         '''
 
 
-        mask = torch.zeros_like(target, dtype = torch.bool)
+        mask = torch.zeros_like(
+            target, 
+            dtype = torch.bool, 
+            device = torch.device("cpu")
+        )
 
         if (self.config["counter"] == 0).all():
             # all classes have been recorded the specified amount of times
@@ -377,9 +373,10 @@ class Model(torch.nn.Module):
                 # since target is a 1D tensor, we will get one 1D tensor with indices
                 idx = torch.nonzero(target == cls, as_tuple = True)[0]
                 idx = idx[:self.config["counter"][cls]]
-
+                
                 # substract the count of found samples
                 self.config["counter"][cls] -= len(idx)
+                breakpoint()
                 indices.append(idx)
 
         for idx in indices:
@@ -509,7 +506,8 @@ class Model(torch.nn.Module):
             self.config["counter"] = torch.full(
                 size = (self.config["num_classes"],),
                 fill_value = self.config["samples_per_class"],
-                dtype = torch.uint8
+                dtype = torch.uint8,
+                device = torch.device("cpu")
             )
 
         if self.config["DEBUG"]:
@@ -526,16 +524,16 @@ class Model(torch.nn.Module):
         :rtype: bool
         '''
 
-        if not self.config["counter"]:
-            warnings.warn("Counter does not exist, probably bad initialisation \
-            or recording has not been requested.\nSkipping reset...")
+        if self.config["counter"] in locals():
+            warnings.warn(
+                "Counter does not exist, probably bad initialisation or recording has not been requested.\nSkipping reset..."
+            )
             return False
         
-        if self.config["counter"].is_nonzero():
-            warnings.warn(f"Class \
-                {self.config["counter"].nonzero(as_tuple = True)[0]} \
-            was not found the specified amount of times \
-            in the data to be recorded.\nProceeding with reset...")
+        if self.config["counter"].any():
+            warnings.warn(
+                f"\nClass {self.config["counter"].nonzero(as_tuple = True)[0]} was not found the specified amount of times in the data to be recorded.\nProceeding with reset..."
+            )
 
         self.config["counter"].fill_(self.config["samples_per_class"])
         return True
