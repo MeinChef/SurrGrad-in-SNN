@@ -20,7 +20,8 @@ def main() -> None:
         misc.stats_to_file(
             config_data,
             loss,
-            acc
+            acc,
+            rec
         )
         # model spikes in Memory usage after Training (~486 Batches a 128) -> that was due to
         # record_test = True, stupid me
