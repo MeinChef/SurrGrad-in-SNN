@@ -5,8 +5,6 @@ from imports import surrogate
 from imports import Callable
 from imports import datetime
 from imports import numpy as np
-from imports import plt
-# from grad import super_spike_21
 from imports import torch
 from imports import tqdm
 from imports import re
@@ -201,9 +199,45 @@ def spk_rec_to_file(
             elif rec.get_device() == -1:
                 layer[j] = rec.numpy().astype(np.int8)
             
-        np.savez_compressed(os.path.join(path, identifier[i]), *layer)   
+        np.savez_compressed(os.path.join(path, identifier[i]), *layer)
 
-def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list,list,list] = None) -> None:
+def load_spk_rec(
+        config: dict,
+        identifier: str = "test-ep0"
+) -> list[np.ndarray]:
+    '''
+    Function for loading the spike recordings of the hidden layers from a file on disk.
+    
+    :param config: config dictionary
+    :type config: dict
+    
+    :param identifier: Useful for loading the data with a custom filename
+    :type identifier: str, optional
+
+    :return: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
+    :rtype: list[np.ndarray]
+    '''
+
+    paths = [make_path(config["data_path"] + "/rec/" + identifier + f"-layer{layer}.npz") for layer in range(1, 4)]
+
+    recordings = []
+    for path in paths:
+        try:
+            data = np.load(path, allow_pickle = True)
+            recordings.append(data)
+        except FileNotFoundError:
+            print(f"File {path} not found. Skipping...")
+            continue
+    return recordings
+
+
+def stats_to_file(
+        config: dict, 
+        loss: list, 
+        acc: list = None, 
+        spk_rec: list[list,list,list] = None,
+        identifier: str = None
+) -> None:
     '''
     Saves the output from the model to a file, human-readable.
 
@@ -228,7 +262,7 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
                 fmt="%.8f"
             )
         except Exception as e:
-            print(e)
+            print(f"An error occurred: {e}")
             breakpoint()
     if acc:
         try:
@@ -239,42 +273,23 @@ def stats_to_file(config: dict, loss: list, acc: list = None, spk_rec: list[list
                     fmt="%.8f"
                 )
         except Exception as e:
-            print(e)
+            print(f"An error occurred: {e}")
             breakpoint()
 
-    
+    if spk_rec:
+        try:
+            spk_rec_to_file(
+                data = spk_rec,
+                identifier = identifier,
+                path = config["data_path"] + "/rec/"
+            )
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            breakpoint()
 
-def plot_loss_acc(config:dict) -> None:
-    # load values from files
-    loss = np.loadtxt(
-        make_path(config["data_path"] + "/loss.txt"),
-    )
 
-    acc = np.loadtxt(
-        make_path(config["data_path"] + "/acc.txt"),
-    )
 
-    assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
-    
-    epochs = np.arange(1, len(loss) + 1)
 
-    fig, ax1 = plt.subplots()
-
-    # Plot loss on the left y-axis
-    ax1.set_xlabel('Batches')
-    ax1.set_ylabel('Loss', color='orange')
-    ax1.plot(epochs, loss, color='orange', label='Loss')
-    ax1.tick_params(axis='y', labelcolor='orange')
-
-    # Create a second y-axis for accuracy
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Accuracy', color='blue')
-    ax2.plot(epochs, acc, color='blue', label='Accuracy')
-    ax2.tick_params(axis='y', labelcolor='blue')
-
-    plt.title('Loss and Accuracy during Training')
-    fig.tight_layout()
-    plt.show()
 
 def get_shortest_observation(
         data: torch.utils.data.DataLoader
