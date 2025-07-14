@@ -26,6 +26,7 @@ import torchvision
 import snntorch
 from snntorch import functional
 from snntorch import surrogate
+from snntorch import spikeplot
 
 # visualization
 import matplotlib.pyplot as plt
