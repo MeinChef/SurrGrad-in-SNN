@@ -6,6 +6,9 @@ from model import Model
 def main() -> None:
     config_data, config_model = data.load_config()
     train, test, num_classes = data.data_prep(config_data)
+    
+    if config_data["DEBUG"]:
+        exit(0)
 
     config_model["num_classes"] = num_classes
     model = Model(config = config_model)
@@ -26,6 +29,7 @@ def main() -> None:
         model.reset()
 
     # misc.plot_loss_acc(config_data)
+    misc.cleanup()
     
 
 if __name__ == "__main__":

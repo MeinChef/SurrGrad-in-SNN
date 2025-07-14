@@ -1,9 +1,10 @@
 from imports import os
+from imports import shutil
 from imports import warnings
 from imports import surrogate
 from imports import Callable
-from imports import numpy as np
 from imports import datetime
+from imports import numpy as np
 from imports import plt
 # from grad import super_spike_21
 from imports import torch
@@ -304,7 +305,7 @@ def get_longest_observation(
 def get_sample_distribution(
         data: torch.utils.data.DataLoader,
         num_classes: int = 10
-) -> dict:
+) -> torch.Tensor:
     '''
     Function for getting the sample distribution in the dataset.
     '''
@@ -312,6 +313,20 @@ def get_sample_distribution(
     for x, y in tqdm.tqdm(data):
         amount += torch.bincount(y, minlength = 10)
     return amount
+
+def get_sample_distribution_from_tonic(
+        data,
+        num_classes: int = 10
+) -> torch.Tensor:
+    '''
+    Function for getting the sample distribution in the dataset.
+    '''
+    amount = torch.zeros(num_classes, dtype = torch.int32)
+    for x, y in tqdm.tqdm(data):
+        amount[y] += 1
+
+    return amount
+
 
 def make_path(path: str) -> os.PathLike:
     '''
@@ -332,3 +347,28 @@ def make_path(path: str) -> os.PathLike:
         path_lst.extend(part)
     path = os.path.join(*path_lst)
     return path
+
+def cleanup(config: dict) -> None:
+    '''
+    Function for cleaning up DiskCachedDataset files. 
+    Since they caused weird happenings to the targets, it is better to delete them.
+
+    :param config: config dictionary
+    :type config: dict
+    '''
+
+    to_clean = make_path(config["cache_path"])
+ 
+    print(f"Cleaning up {to_clean}...")
+
+    if os.path.exists(to_clean):
+        try:
+            shutil.rmtree(to_clean)
+        except OSError as e:
+            print(f"Error: {e.strerror}. Could not delete {to_clean}.")
+    else:
+        print(f"Path {to_clean} does not exist. Nothing to clean up.")
+
+    print("Done.")
+    
+    return

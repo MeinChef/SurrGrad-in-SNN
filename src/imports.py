@@ -8,6 +8,7 @@ from collections.abc import Callable
 import gc
 import tqdm
 import re
+import shutil
 
 # file handling
 import yaml

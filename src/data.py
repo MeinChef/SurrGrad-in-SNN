@@ -2,7 +2,7 @@ from imports import yaml
 from imports import torch
 from imports import tonic
 from imports import torchvision
-from misc import make_path
+from misc import make_path, get_sample_distribution, get_sample_distribution_from_tonic
 
 
 # load the config.yml
@@ -67,6 +67,13 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
         train = False
     )
 
+    # check the distribution of the dataset at this point
+    if config["DEBUG"]:
+        # print("Trainset before Cache:", get_sample_distribution_from_tonic(trainset, num_classes))
+        # print("Testset before Cache:", get_sample_distribution_from_tonic(testset, num_classes))
+        
+        # prints: Testset before Cache: tensor([ 980, 1135, 1032, 1010,  982,  892,  958, 1028,  974, 1009], dtype=torch.int32)
+        pass
 
     # this thing eats RAM as snack
     # cached_trainset = tonic.MemoryCachedDataset(trainset)
@@ -86,7 +93,12 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
     if config["DEBUG"]:
         print("Sensor:", sensor)
         print("Rough Size of Dataset in Memory:", len(pickle.dumps(cached_trainset)) + len(pickle.dumps(cached_testset)))
-        
+
+        # print("Trainset after Cache:", get_sample_distribution_from_tonic(cached_trainset, num_classes))
+        print("Testset after Cache:", get_sample_distribution_from_tonic(cached_testset, num_classes))
+        # after deleting the cached folder, it is identical to above.
+        # So it is after applying the dataloader.
+
     torch.manual_seed(config["seed"])
     # prepare them for training, 
     trainloader = torch.utils.data.DataLoader(
@@ -108,5 +120,10 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
         prefetch_factor = config["prefetch"],
         pin_memory = True
     )
+
+    if config["DEBUG"]:
+        # print("Trainset after Cache:", get_sample_distribution(trainloader, num_classes))
+        print("Testset after Cache:", get_sample_distribution(testloader, num_classes))
+        # prints Testset after Cache: tensor([5923, 4077,    0,    0,    0,    0,    0,    0,    0,    0], dtype=torch.int32)
 
     return trainloader, testloader, num_classes

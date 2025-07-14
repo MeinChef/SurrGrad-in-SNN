@@ -1,11 +1,11 @@
 config_data:
   seed: 42
-  DEBUG: False
+  DEBUG: True
   data_path: "data"
   cache_path: "data/cache/"
   filter_time: 10000
   time_window: 1000
-  batch_size: 128
+  batch_size: 64
   worker: 4
   prefetch: 10
 
@@ -60,7 +60,7 @@ config_model:
   # training parametres
   epochs: 1
   # partial training in minibatches. to disable set to -1
-  partial_training: 50
+  partial_training: 25
 
 
   # record hidden layers?
@@ -69,4 +69,4 @@ config_model:
   samples_per_class: 10
 
   DEBUG: False
-  PROGRESS: True
+  PROGRESS: False
