@@ -1,8 +1,11 @@
 config_data:
   seed: 42
-  DEBUG: True
+  DEBUG: False
   data_path: "data"
   cache_path: "data/cache/"
+  # run-specific name for the save files of the layer recordings
+  identifier: null
+
   filter_time: 10000
   time_window: 1000
   batch_size: 64
@@ -11,6 +14,7 @@ config_data:
 
   # available encodings: rate, latency, latency_timing
   target: "rate"
+
 
 config_model:
 
@@ -22,11 +26,11 @@ config_model:
       # ce_rate: [arg: none]
       # mse_temporal: [arg: tolerance]
       # mse_rate: [arg: correct_rate, incorrect_rate]
-    type: "mse_temporal"
+    type: "ce_temporal"
     correct_rate: null
-    inverse: null
+    inverse: "reciprocal"
     incorrect_rate: null
-    tolerance: 3
+    tolerance: null
 
   accuracy:
     # available accuracies: rate, temporal
@@ -60,7 +64,8 @@ config_model:
   # training parametres
   epochs: 1
   # partial training in minibatches. to disable set to -1
-  partial_training: 25
+  partial_training: 50
+  partial_testing: 10
 
 
   # record hidden layers?
