@@ -15,22 +15,28 @@ def main() -> None:
 
     # training
     for epoch in range(config_model["epochs"]):
-        loss, acc, rec = model.train_loop(data = train)
         
+        loss, acc, rec = model.train_loop(data = train)
         misc.stats_to_file(
             config_data,
             loss,
             acc,
-            rec
         )
-        # model spikes in Memory usage after Training (~486 Batches a 128) -> that was due to
-        # record_test = True, stupid me
-        model.test_loop(data = test)
+
+        loss, acc, rec = model.test_loop(data = test)
+        misc.stats_to_file(
+            config_data,
+            loss,
+            acc,
+            rec,
+            identifier = f"test-ep{epoch}"
+        )
+
         # reset counter needed for recording hidden layers
         model.reset()
 
     # misc.plot_loss_acc(config_data)
-    misc.cleanup(config = config_data)
+    # misc.cleanup(config = config_data)
     
 
 if __name__ == "__main__":
