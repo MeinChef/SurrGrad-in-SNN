@@ -251,6 +251,7 @@ class Model(torch.nn.Module):
             # loss and accuracy calculations
             loss = self.loss(x, target)
             acc = self.acc(x, target)
+            # breakpoint()
 
             # weight update
             self.optim.zero_grad()
@@ -280,7 +281,7 @@ class Model(torch.nn.Module):
     def test_loop(
         self,
         data: torch.utils.data.DataLoader
-    ) -> None:
+    ) -> tuple[list, list, list]:
         
         '''
         Function for evaluating the network on the test-part of a dataset.
@@ -305,12 +306,13 @@ class Model(torch.nn.Module):
         with torch.no_grad():
             self.train(False)
 
-            for x, target in tqdm.tqdm(data):
+            for i, (x, target) in tqdm.tqdm(enumerate(data)):
                 x = x.to(self.device)
                 target = target.to(self.device)
                 
                 if self.config["DEBUG"]:
-                    print("Type of Data:", x.dtype, "\non GPU:", x.get_device(), "\nShape of Data:", x.shape)
+                    print("Type of Data:", x.dtype, "\non GPU:", x.get_device(), \
+                          "\nShape of Data:", x.shape)
                 
                 # differentiate between recording hidden states or not
                 if self.config["record_hidden"]:
@@ -323,7 +325,7 @@ class Model(torch.nn.Module):
                     rec_list[0].append(rec[0][:, mask])
                     rec_list[1].append(rec[1][:, mask])
                     rec_list[2].append(rec[2][:, mask])
-                    break
+                    
         
                 else:
                     x, = self.forward(x)
@@ -332,8 +334,12 @@ class Model(torch.nn.Module):
                 loss = self.loss(x, target)
                 acc = self.acc(x, target)
 
-                loss_hist.append(loss)
+                loss_hist.append(loss.item())
                 acc_hist.append(acc)
+
+                # interrupt testing after specified amount of minibatches
+                if i == self.config["partial_testing"]:
+                    break
 
         return loss_hist, acc_hist, rec_list
 
@@ -376,7 +382,6 @@ class Model(torch.nn.Module):
                 
                 # substract the count of found samples
                 self.config["counter"][cls] -= len(idx)
-                breakpoint()
                 indices.append(idx)
 
         for idx in indices:
@@ -471,7 +476,8 @@ class Model(torch.nn.Module):
         data: torch.utils.data.DataLoader
     ) -> None:
         '''
-        Generates the config-values for the output shape of the individual layers in the network. Necessary for spike recording.
+        Generates the config-values for the output shape of the individual layers in the network. 
+        Necessary for spike recording.
        
         :param data: Dataloader - data for the training
         :type data: torch.utils.data.DataLoader, required
@@ -526,13 +532,17 @@ class Model(torch.nn.Module):
 
         if self.config["counter"] in locals():
             warnings.warn(
-                "Counter does not exist, probably bad initialisation or recording has not been requested.\nSkipping reset..."
+                "Counter does not exist, probably bad initialisation or recording has not been requested.\n" \
+                "Skipping reset..."
             )
             return False
         
         if self.config["counter"].any():
             warnings.warn(
-                f"\nClass {self.config["counter"].nonzero(as_tuple = True)[0]} was not found the specified amount of times in the data to be recorded.\nProceeding with reset..."
+                f"\nClasses {self.config["counter"].nonzero(as_tuple = True)[0].numpy()}\n" \
+                f"was/were not found the specified amount of times in the data.\n" \
+                f"Found samples {10-self.config["counter"].numpy()} times\n" \
+                "Proceeding with reset..."
             )
 
         self.config["counter"].fill_(self.config["samples_per_class"])
