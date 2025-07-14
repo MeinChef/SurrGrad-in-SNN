@@ -1,2 +1,0 @@
-Train: tensor([5923, 6742, 5958, 6131, 5842, 5421, 5918, 6265, 5851, 5949], dtype=torch.int32)
-Test: tensor([5923, 4077,    0,    0,    0,    0,    0,    0,    0,    0], dtype=torch.int32)
