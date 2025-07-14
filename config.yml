@@ -3,8 +3,7 @@ config_data:
   DEBUG: False
   data_path: "data"
   cache_path: "data/cache/"
-  # run-specific name for the save files of the layer recordings
-  identifier: null
+
 
   filter_time: 10000
   time_window: 1000
