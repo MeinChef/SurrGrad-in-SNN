@@ -29,7 +29,7 @@ def main() -> None:
         model.reset()
 
     # misc.plot_loss_acc(config_data)
-    misc.cleanup()
+    misc.cleanup(config = config_data)
     
 
 if __name__ == "__main__":
