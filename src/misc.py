@@ -301,6 +301,18 @@ def get_longest_observation(
     
     return longest # 314 in the whole dataset
 
+def get_sample_distribution(
+        data: torch.utils.data.DataLoader,
+        num_classes: int = 10
+) -> dict:
+    '''
+    Function for getting the sample distribution in the dataset.
+    '''
+    amount = torch.zeros(num_classes, dtype = torch.int32)
+    for x, y in tqdm.tqdm(data):
+        amount += torch.bincount(y, minlength = 10)
+    return amount
+
 def make_path(path: str) -> os.PathLike:
     '''
     Function for creating cross-os-compatible paths from strings.
