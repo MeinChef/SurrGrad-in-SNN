@@ -73,7 +73,7 @@ class Model(torch.nn.Module):
     def forward(
         self, 
         x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, tuple] | tuple[torch.Tensor]:
         '''
         Forward pass of the Model. Passes x through all layers, returns either a tuple[tensor, tensor] or a tuple[tensor].
         Depending on config["record_hidden"], set in config.yml
