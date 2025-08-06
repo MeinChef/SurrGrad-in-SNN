@@ -6,7 +6,7 @@ from imports import functional # snntorch.functional
 from imports import surrogate # snntorch.surrogate
 # from imports import torchinfo
 from imports import tqdm
-import misc
+from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim, get_longest_observation
 
 class Model(torch.nn.Module):
     def __init__(
@@ -23,7 +23,10 @@ class Model(torch.nn.Module):
 
         self.config = config
         # set surrogate
-        self.surrogate = misc.resolve_gradient(config = self.config["surrogate"])
+        surrogate = resolve_gradient(config = self.config["surrogate"])
+        self.config["summary"] = False
+        self.config["debugged"] = False
+        self.config["expanded"] = False
         
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -37,7 +40,7 @@ class Model(torch.nn.Module):
         self.connect2 = torch.nn.MaxPool2d(2)
         self.neuron1 = snn.Leaky(
             beta = config["neuron"]["beta"], 
-            spike_grad = self.surrogate, 
+            spike_grad = surrogate, 
             init_hidden = False
         )
         
@@ -45,7 +48,7 @@ class Model(torch.nn.Module):
         self.connect4 = torch.nn.MaxPool2d(2)
         self.neuron2 = snn.Leaky(
             beta = config["neuron"]["beta"], 
-            spike_grad = self.surrogate, 
+            spike_grad = surrogate, 
             init_hidden = False
         )
         
@@ -53,7 +56,7 @@ class Model(torch.nn.Module):
         self.connect6 = torch.nn.Linear(32*5*5, 10)
         self.neuron3 = snn.Leaky(
             beta = config["neuron"]["beta"], 
-            spike_grad = self.surrogate, 
+            spike_grad = surrogate, 
             init_hidden = False
         )
         
@@ -61,9 +64,48 @@ class Model(torch.nn.Module):
         self.to(device = self.device)
 
         # use config to set essentials
-        self.loss = misc.resolve_loss(config = self.config["loss"])
-        self.acc = misc.resolve_acc(config = self.config["accuracy"])
-        self.optim = misc.resolve_optim(config = self.config["optimiser"], params = self.parameters())
+        self.loss = resolve_loss(config = self.config["loss"])
+        self.acc = resolve_acc(config = self.config["accuracy"])
+        self.optim = resolve_optim(config = self.config["optimiser"], params = self.parameters())
+
+        # dummy values for variables
+        self.out = False
+        self.rec_spk1 = False
+        self.rec_spk2 = False
+        self.rec_spk3 = False
+
+    def __init_tensors__(
+            self
+    ) -> None:
+        
+        # initialise tensors that are being used during the forward pass
+        self.out = torch.zeros(
+            [314, self.config["batch_size"], 10],
+            dtype = torch.float32
+        )
+        self.cur_steps = -1
+        
+        if self.config["record_train"] or self.config["record_test"]:
+            max_steps = get_longest_observation()
+
+            self.rec_spk1 = torch.zeros(
+                [max_steps, *self.config["layer1"]],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )
+            self.rec_spk2 = torch.zeros(
+                [max_steps, *self.config["layer2"]],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )
+            self.rec_spk3 = torch.zeros(
+                [max_steps, *self.config["layer3"]],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )
 
 
     ########################
@@ -73,15 +115,14 @@ class Model(torch.nn.Module):
     def forward(
         self, 
         x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         '''
-        Forward pass of the Model. Passes x through all layers, returns either a tuple[tensor, tensor] or a tuple[tensor].
-        Depending on config["record_hidden"], set in config.yml
-        
+        Forward pass of the Model. Passes x through all layers, and returns the calculation of the last layer
+
         :param x: tensor - a minibatch with the dimensions [time_steps, minibatch_size, 2, 34, 34]
         :type x: torch.Tensor, required
-        :return: tuple[tensor, tensor] or tuple[tensor] - depending on config["record_hidden"]
-        :rtype: tuple
+        :return: Returns prediction of the last layer.
+        :rtype: torch.Tensor
         '''
         
         mem1 = self.neuron1.reset_mem()
@@ -89,47 +130,51 @@ class Model(torch.nn.Module):
         mem3 = self.neuron3.reset_mem()
 
         # x.shape[0] is the number of time_steps within the minibatch. varies.
-        time_steps = x.shape[0]
+        self.cur_steps = x.shape[0]
 
+        #############################3
+        # TODO:move all of the tensors to class, so that they don't get destroyed like 100 times
+        #############################3
+        
         # x.shape[1] is the minibatch-size
         # 10, because there are 10 classes to predict
-        out = torch.empty(
-            [time_steps, x.shape[1], 10], 
-            device = self.device
-        )
+        # out = torch.empty(
+        #     [time_steps, x.shape[1], 10], 
+        #     device = self.device
+        # )
 
-        if self.config["DEBUG"]:
-            print("Size of x:", x.shape)
-            print("Size of mem1:", mem1.shape)
-            print("Size of mem2:", mem2.shape)
-            print("Size of mem3:", mem3.shape)
+        # if self.config["DEBUG"]:
+        #     print("Size of x:", x.shape)
+        #     print("Size of mem1:", mem1.shape)
+        #     print("Size of mem2:", mem2.shape)
+        #     print("Size of mem3:", mem3.shape)
 
         # initialise arrays for recording the hidden layers
-        if self.config["record_hidden"]:
-            # on gpu might be a tiny bit faster, but the memory footprint is def. not worth it
-            rec_spk1 = torch.empty(
-                [time_steps, *self.config["layer1"]],
-                dtype = torch.float32,
-                # device = self.device,
-                device = torch.device("cpu"),
-                requires_grad = False
-            )
+        # if self.config["record_hidden"]:
+        #     # on gpu might be a tiny bit faster, but the memory footprint is def. not worth it
+        #     rec_spk1 = torch.empty(
+        #         [time_steps, *self.config["layer1"]],
+        #         dtype = torch.float32,
+        #         # device = self.device,
+        #         device = torch.device("cpu"),
+        #         requires_grad = False
+        #     )
 
-            rec_spk2 = torch.empty(
-                [time_steps, *self.config["layer2"]],
-                dtype = torch.float32,
-                # device = self.device,
-                device = torch.device("cpu"),
-                requires_grad = False
-            )
+        #     rec_spk2 = torch.empty(
+        #         [time_steps, *self.config["layer2"]],
+        #         dtype = torch.float32,
+        #         # device = self.device,
+        #         device = torch.device("cpu"),
+        #         requires_grad = False
+        #     )
 
-            rec_spk3 = torch.empty(
-                [time_steps, *self.config["layer3"]],
-                dtype = torch.float32,
-                # device = self.device,
-                device = torch.device("cpu"),
-                requires_grad = False
-            )
+        #     rec_spk3 = torch.empty(
+        #         [time_steps, *self.config["layer3"]],
+        #         dtype = torch.float32,
+        #         # device = self.device,
+        #         device = torch.device("cpu"),
+        #         requires_grad = False
+        #     )
 
         # Shape of Tensor while passing through the network:
         # x     [time_steps, minibatch, 2, 34, 34]
@@ -145,7 +190,7 @@ class Model(torch.nn.Module):
 
 
         # the actual forward pass
-        for step in range(time_steps):
+        for step in range(self.cur_steps):
             cur = self.connect1(x[step])
             cur = self.connect2(cur)
             spk1, mem1 = self.neuron1(cur, mem1)
@@ -156,41 +201,39 @@ class Model(torch.nn.Module):
             cur = self.connect6(cur)
             spk3, mem3 = self.neuron3(cur, mem3)
 
-            out[step] = spk3
+            self.out[step] = spk3
 
             # recording
             if self.config["record_hidden"]:
-                rec_spk1[step] = spk1.detach().cpu()
-                rec_spk2[step] = spk2.detach().cpu()
-                rec_spk3[step] = spk3.detach().cpu()
+                self.rec_spk1[step] = spk1.detach().cpu()
+                self.rec_spk2[step] = spk2.detach().cpu()
+                self.rec_spk3[step] = spk3.detach().cpu()
 
 
 
-        if self.config["DEBUG"] and not self.config["debugged"]:
-            print("Size of mem1:", mem1.shape)
-            print("Size of mem2:", mem2.shape)
-            print("Size of mem3:", mem3.shape)
+        # if self.config["DEBUG"] and not self.config["debugged"]:
+        #     print("Size of mem1:", mem1.shape)
+        #     print("Size of mem2:", mem2.shape)
+        #     print("Size of mem3:", mem3.shape)
 
-            print("Size of spk1:", spk1.shape)
-            print("Size of spk2:", spk2.shape)
-            print("Size of spk3:", spk3.shape)
+        #     print("Size of spk1:", spk1.shape)
+        #     print("Size of spk2:", spk2.shape)
+        #     print("Size of spk3:", spk3.shape)
 
-            print("Type of spk:", spk1.dtype)
-            print("Type of mem:", mem1.dtype)
+        #     print("Type of spk:", spk1.dtype)
+        #     print("Type of mem:", mem1.dtype)
 
-            print("Location of spk:", spk1.get_device())
-            print("location of mem:", mem1.get_device())
+        #     print("Location of spk:", spk1.get_device())
+        #     print("location of mem:", mem1.get_device())
 
-            self.config["debugged"] = True
+        #     self.config["debugged"] = True
 
-        # return the hidden recording, if so desired
-        if self.config["record_hidden"]:
-            return out, (rec_spk1, rec_spk2, rec_spk3)
+
         
-        return (out,)
+        return self.out
 
 
-    def train_loop(
+    def fit(
         self, 
         data: torch.utils.data.DataLoader
     ) -> tuple[list, list, list]:
@@ -204,7 +247,9 @@ class Model(torch.nn.Module):
         :rtype: tuple
         '''
 
-        self.expand_config(data)
+        if not self.config["expanded"]:
+            self.expand_config(data)
+            self.__init_tensors__()
         self.train()
 
         if self.config["record_train"]:
@@ -214,7 +259,9 @@ class Model(torch.nn.Module):
 
         loss_hist = []
         acc_hist  = []
-        rec_list  = [[],[],[]]
+
+        if self.config["record_hidden"]:
+            rec_list  = [[],[],[]]
 
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
@@ -238,20 +285,23 @@ class Model(torch.nn.Module):
             
             # differentiate between recording hidden states or not
             if self.config["record_hidden"]:
-                x, rec = self.forward(x)
+                pred = self.forward(x)
+
+                # create a mask for the hidden layer recordings
+                mask = self.create_mask(target)
 
                 # separate the recordings to the individual layers
-                rec_list[0].append(rec[0])
-                rec_list[1].append(rec[1])
-                rec_list[2].append(rec[2])
+                if torch.is_tensor(mask):
+                    rec_list[0].append(self.rec_spk1[:self.cur_steps])
+                    rec_list[1].append(self.rec_spk2[:self.cur_steps])
+                    rec_list[2].append(self.rec_spk3[:self.cur_steps])
 
             else:
-                x, = self.forward(x)
+                pred = self.forward(x)
             
             # loss and accuracy calculations
-            loss = self.loss(x, target)
-            acc = self.acc(x, target)
-            # breakpoint()
+            loss = self.loss(pred, target)
+            acc = self.acc(pred, target)
 
             # weight update
             self.optim.zero_grad()
@@ -278,7 +328,7 @@ class Model(torch.nn.Module):
         return loss_hist, acc_hist, rec_list
     
 
-    def test_loop(
+    def evaluate(
         self,
         data: torch.utils.data.DataLoader
     ) -> tuple[list, list, list]:
@@ -292,6 +342,9 @@ class Model(torch.nn.Module):
         :rtype: tuple
         '''
 
+        if not self.config["expanded"]:
+            self.expand_config(data)
+            self.__init_tensors__()
 
         if self.config["record_test"]:
             self.config["record_hidden"] = True
@@ -300,7 +353,9 @@ class Model(torch.nn.Module):
 
         loss_hist = []
         acc_hist  = []
-        rec_list  = [[],[],[]]
+
+        if self.config["record_hidden"]:
+            rec_list  = [[],[],[]]
 
         # test loop
         with torch.no_grad():
@@ -316,19 +371,20 @@ class Model(torch.nn.Module):
                 
                 # differentiate between recording hidden states or not
                 if self.config["record_hidden"]:
-                    x, rec = self.forward(x)
+                    x = self.forward(x)
 
                     # create a mask for the hidden layer recordings
                     mask = self.create_mask(target)
 
-                    # separate the recordings to the individual layers
-                    rec_list[0].append(rec[0][:, mask])
-                    rec_list[1].append(rec[1][:, mask])
-                    rec_list[2].append(rec[2][:, mask])
-                    
+                    if torch.is_tensor(mask):
+                        # separate the recordings to the individual layers
+                        rec_list[0].append(self.rec_spk1[:self.cur_steps, mask])
+                        rec_list[1].append(self.rec_spk2[:self.cur_steps, mask])
+                        rec_list[2].append(self.rec_spk3[:self.cur_steps, mask])
+                        
         
                 else:
-                    x, = self.forward(x)
+                    x = self.forward(x)
 
                 # loss and accuracy calculations
                 loss = self.loss(x, target)
@@ -345,17 +401,24 @@ class Model(torch.nn.Module):
 
     def create_mask(
             self,
-            target: torch.Tensor
-    ) -> torch.Tensor:
+            target: torch.Tensor,
+    ) -> torch.Tensor | bool:
 
         '''
-        Function to create a mask for the hidden layer recordings.
+        Function to create a mask for the hidden layer recordings. Returns mask if there is still something to be recorded.
+        Otherwise returns False.
 
         :param target: tensor - the target labels for the minibatch
         :type target: torch.Tensor, required
-        :return: mask - a boolean mask for the hidden layer recordings
+        :return: mask - a boolean mask for the hidden layer recordings or False if there is no value in this batch to be recorded
         :rtype: torch.Tensor
         '''
+
+        # TODO:
+        # add param cls: int = None
+        # and return only the mask for the specified class - since
+        # as of now there are no ways to determine in retrospective which recording
+        # belongs to wich class
 
 
         mask = torch.zeros_like(
@@ -367,7 +430,7 @@ class Model(torch.nn.Module):
         if (self.config["counter"] == 0).all():
             # all classes have been recorded the specified amount of times
             # no need to create a mask
-            return mask
+            return False
 
         indices = []
         for cls in range(self.config["num_classes"]):
@@ -520,6 +583,8 @@ class Model(torch.nn.Module):
             print("Shape of layer1:", self.config["layer1"])
             print("Shape of layer2:", self.config["layer2"])
             print("Shape of layer3:", self.config["layer3"])
+        
+        self.config["expanded"] = True
 
 
     def reset(self) -> bool:
