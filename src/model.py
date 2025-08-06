@@ -73,6 +73,7 @@ class Model(torch.nn.Module):
         self.rec_spk1 = False
         self.rec_spk2 = False
         self.rec_spk3 = False
+        self.config["counter"] = False
 
     def __init_tensors__(
             self
@@ -132,50 +133,6 @@ class Model(torch.nn.Module):
         # x.shape[0] is the number of time_steps within the minibatch. varies.
         self.cur_steps = x.shape[0]
 
-        #############################3
-        # TODO:move all of the tensors to class, so that they don't get destroyed like 100 times
-        #############################3
-        
-        # x.shape[1] is the minibatch-size
-        # 10, because there are 10 classes to predict
-        # out = torch.empty(
-        #     [time_steps, x.shape[1], 10], 
-        #     device = self.device
-        # )
-
-        # if self.config["DEBUG"]:
-        #     print("Size of x:", x.shape)
-        #     print("Size of mem1:", mem1.shape)
-        #     print("Size of mem2:", mem2.shape)
-        #     print("Size of mem3:", mem3.shape)
-
-        # initialise arrays for recording the hidden layers
-        # if self.config["record_hidden"]:
-        #     # on gpu might be a tiny bit faster, but the memory footprint is def. not worth it
-        #     rec_spk1 = torch.empty(
-        #         [time_steps, *self.config["layer1"]],
-        #         dtype = torch.float32,
-        #         # device = self.device,
-        #         device = torch.device("cpu"),
-        #         requires_grad = False
-        #     )
-
-        #     rec_spk2 = torch.empty(
-        #         [time_steps, *self.config["layer2"]],
-        #         dtype = torch.float32,
-        #         # device = self.device,
-        #         device = torch.device("cpu"),
-        #         requires_grad = False
-        #     )
-
-        #     rec_spk3 = torch.empty(
-        #         [time_steps, *self.config["layer3"]],
-        #         dtype = torch.float32,
-        #         # device = self.device,
-        #         device = torch.device("cpu"),
-        #         requires_grad = False
-        #     )
-
         # Shape of Tensor while passing through the network:
         # x     [time_steps, minibatch, 2, 34, 34]
         # con1      [minibatch, 12, 30, 30]
@@ -209,27 +166,6 @@ class Model(torch.nn.Module):
                 self.rec_spk2[step] = spk2.detach().cpu()
                 self.rec_spk3[step] = spk3.detach().cpu()
 
-
-
-        # if self.config["DEBUG"] and not self.config["debugged"]:
-        #     print("Size of mem1:", mem1.shape)
-        #     print("Size of mem2:", mem2.shape)
-        #     print("Size of mem3:", mem3.shape)
-
-        #     print("Size of spk1:", spk1.shape)
-        #     print("Size of spk2:", spk2.shape)
-        #     print("Size of spk3:", spk3.shape)
-
-        #     print("Type of spk:", spk1.dtype)
-        #     print("Type of mem:", mem1.dtype)
-
-        #     print("Location of spk:", spk1.get_device())
-        #     print("location of mem:", mem1.get_device())
-
-        #     self.config["debugged"] = True
-
-
-        
         return self.out
 
 
@@ -595,7 +531,7 @@ class Model(torch.nn.Module):
         :rtype: bool
         '''
 
-        if self.config["counter"] in locals():
+        if not self.config["counter"]:
             warnings.warn(
                 "Counter does not exist, probably bad initialisation or recording has not been requested.\n" \
                 "Skipping reset..."
