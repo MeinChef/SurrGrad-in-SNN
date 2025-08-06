@@ -64,7 +64,7 @@ class Model(torch.nn.Module):
         self.to(device = self.device)
 
         # use config to set essentials
-        self.loss = resolve_loss(config = self.config["loss"])
+        self.lossfn = resolve_loss(config = self.config["loss"])
         self.acc = resolve_acc(config = self.config["accuracy"])
         self.optim = resolve_optim(config = self.config["optimiser"], params = self.parameters())
 
@@ -74,16 +74,11 @@ class Model(torch.nn.Module):
         self.rec_spk2 = False
         self.rec_spk3 = False
         self.config["counter"] = False
+        self.config["record_hidden"] = False
 
     def __init_tensors__(
             self
     ) -> None:
-        
-        # initialise tensors that are being used during the forward pass
-        self.out = torch.zeros(
-            [314, self.config["batch_size"], 10],
-            dtype = torch.float32
-        )
         self.cur_steps = -1
         
         if self.config["record_train"] or self.config["record_test"]:
@@ -132,6 +127,10 @@ class Model(torch.nn.Module):
 
         # x.shape[0] is the number of time_steps within the minibatch. varies.
         self.cur_steps = x.shape[0]
+        out = torch.empty(
+            [self.cur_steps, x.shape[1], 10], 
+            device = self.device
+        )
 
         # Shape of Tensor while passing through the network:
         # x     [time_steps, minibatch, 2, 34, 34]
@@ -158,16 +157,15 @@ class Model(torch.nn.Module):
             cur = self.connect6(cur)
             spk3, mem3 = self.neuron3(cur, mem3)
 
-            self.out[step] = spk3
+            out[step] = spk3
 
             # recording
             if self.config["record_hidden"]:
-                self.rec_spk1[step] = spk1.detach().cpu()
-                self.rec_spk2[step] = spk2.detach().cpu()
-                self.rec_spk3[step] = spk3.detach().cpu()
+                self.rec_spk1[step] = spk1 #.detach().cpu()
+                self.rec_spk2[step] = spk2 #.detach().cpu()
+                self.rec_spk3[step] = spk3 #.detach().cpu()
 
-        return self.out
-
+        return out
 
     def fit(
         self, 
@@ -196,8 +194,7 @@ class Model(torch.nn.Module):
         loss_hist = []
         acc_hist  = []
 
-        if self.config["record_hidden"]:
-            rec_list  = [[],[],[]]
+        rec_list  = [[],[],[]]
 
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
@@ -222,26 +219,25 @@ class Model(torch.nn.Module):
             # differentiate between recording hidden states or not
             if self.config["record_hidden"]:
                 pred = self.forward(x)
-
                 # create a mask for the hidden layer recordings
                 mask = self.create_mask(target)
 
                 # separate the recordings to the individual layers
                 if torch.is_tensor(mask):
-                    rec_list[0].append(self.rec_spk1[:self.cur_steps])
-                    rec_list[1].append(self.rec_spk2[:self.cur_steps])
-                    rec_list[2].append(self.rec_spk3[:self.cur_steps])
+                    rec_list[0].append(self.rec_spk1[:self.cur_steps].clone().detach().cpu())
+                    rec_list[1].append(self.rec_spk2[:self.cur_steps].clone().detach().cpu())
+                    rec_list[2].append(self.rec_spk3[:self.cur_steps].clone().detach().cpu())
 
             else:
                 pred = self.forward(x)
             
             # loss and accuracy calculations
-            loss = self.loss(pred, target)
+            loss = self.lossfn(pred, target)
             acc = self.acc(pred, target)
 
             # weight update
             self.optim.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph = True)
             self.optim.step()
 
             # TODO: record loss/accuracy during training
@@ -290,8 +286,7 @@ class Model(torch.nn.Module):
         loss_hist = []
         acc_hist  = []
 
-        if self.config["record_hidden"]:
-            rec_list  = [[],[],[]]
+        rec_list  = [[],[],[]]
 
         # test loop
         with torch.no_grad():
@@ -323,7 +318,7 @@ class Model(torch.nn.Module):
                     x = self.forward(x)
 
                 # loss and accuracy calculations
-                loss = self.loss(x, target)
+                loss = self.lossfn(x, target)
                 acc = self.acc(x, target)
 
                 loss_hist.append(loss.item())
@@ -531,7 +526,7 @@ class Model(torch.nn.Module):
         :rtype: bool
         '''
 
-        if not self.config["counter"]:
+        if not torch.is_tensor(self.config["counter"]):
             warnings.warn(
                 "Counter does not exist, probably bad initialisation or recording has not been requested.\n" \
                 "Skipping reset..."
