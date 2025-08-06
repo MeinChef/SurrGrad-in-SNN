@@ -13,6 +13,10 @@ def main() -> None:
     if config_data["DEBUG"]:
         exit(0)
 
+    print("Train", misc.get_sample_distribution(train))
+    print("Test", misc.get_sample_distribution(test))
+    exit(0)
+
     config_model["num_classes"] = num_classes
     model = Model(config = config_model)
 
