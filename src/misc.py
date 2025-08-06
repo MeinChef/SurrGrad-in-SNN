@@ -3,12 +3,11 @@ from imports import shutil
 from imports import warnings
 from imports import surrogate
 from imports import Callable
-from imports import datetime
-from imports import numpy as np
 from imports import torch
 from imports import tqdm
 from imports import re
 from imports import functional
+
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
@@ -25,14 +24,14 @@ def check_working_directory() -> bool:
                 os.chdir(os.path.join(os.getcwd(), "SurrGrad-in-SNN"))
             except Exception as e:
                 print(e)
-                raise LookupError("Could not find the folder SurrGrad-in-SNN in your current working directory. \
-                                  Consider changing the working directory")
+                raise LookupError("Could not find the folder SurrGrad-in-SNN in your current working directory. "
+                                  "Consider changing the working directory")
             warnings.warn("Changed Working directory. Descended into \"SurrGrad-in-SNN\".")
             return True 
         else:
-            warnings.warn("Could not find the folder SurrGrad-in-SNN in your current working directory. \
-                          No guarantees for working code from this point on.\n\
-                          Proceeding...")   
+            warnings.warn("Could not find the folder SurrGrad-in-SNN in your current working directory. "
+                          "No guarantees for working code from this point on.\n"
+                          "Proceeding...")   
             return False
 
 def resolve_gradient(config: dict) -> Callable:
@@ -157,139 +156,6 @@ def resolve_encoding_map(config: dict) -> Callable:
         raise NameError("The target encoding specified in config is unresolveable. Check source code and typos")
 
 
-def spk_rec_to_file(
-    data: list = None,
-    identifier: str = None,
-    path: str = "data/rec/"
-) -> None:
-    '''
-    Function for saving the spike recording of the hidden layers into a file on disk.
-    
-    :param data: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-    :type data: list, required
-    
-    :param identifier: Useful for saving the data with a custom filename
-    :type identifier: str or list[str], optional
-
-    :param path: Path where to save the data. Default data/rec/
-    :type path: str, optional
-    '''
-
-    # make path os-independent
-    path = make_path(path)
-
-    # TODO: change path resolving with str.split() and os.path.join()
-    if isinstance(identifier, list):
-        assert len(identifier) == 3
-    elif isinstance(identifier, str):
-        identifier = [identifier + '-layer1.npz', identifier + '-layer2.npz', identifier + '-layer3.npz']
-    elif identifier is None:
-        now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        identifier = [now + '-layer1.npz', now + '-layer2.npz', now + '-layer3.npz']
-
-
-    for i, layer in enumerate(data):
-        for j, rec in enumerate(layer):
-
-            # if recording is in GPU memory
-            if rec.get_device() >= 0:
-                rec = rec.cpu().numpy()
-                layer[j] = rec.astype(np.int8) # we shouldn't loose any expressiveness, since spikes are usually 0s or 1s
-            # or it's on cpu
-            elif rec.get_device() == -1:
-                layer[j] = rec.numpy().astype(np.int8)
-            
-        np.savez_compressed(os.path.join(path, identifier[i]), *layer)
-
-def load_spk_rec(
-        config: dict,
-        identifier: str = "test-ep0"
-) -> list[np.ndarray]:
-    '''
-    Function for loading the spike recordings of the hidden layers from a file on disk.
-    
-    :param config: config dictionary
-    :type config: dict
-    
-    :param identifier: Useful for loading the data with a custom filename
-    :type identifier: str, optional
-
-    :return: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-    :rtype: list[np.ndarray]
-    '''
-
-    paths = [make_path(config["data_path"] + "/rec/" + identifier + f"-layer{layer}.npz") for layer in range(1, 4)]
-
-    recordings = []
-    for path in paths:
-        try:
-            data = np.load(path, allow_pickle = True)
-            recordings.append(data)
-        except FileNotFoundError:
-            print(f"File {path} not found. Skipping...")
-            continue
-    return recordings
-
-
-def stats_to_file(
-        config: dict, 
-        loss: list, 
-        acc: list = None, 
-        spk_rec: list[list,list,list] = None,
-        identifier: str = None
-) -> None:
-    '''
-    Saves the output from the model to a file, human-readable.
-
-    :param config: config dictionary
-    :type config: dict
-    
-    :param loss: list of loss values
-    :type loss: list
-    
-    :param acc: list of accuracy values
-    :type acc: list
-
-    :param spk_rec: spk_rec of all layers 
-    :type spk_rec: list, optional
-    '''
-
-    if len(loss) != 0:
-        try:
-            np.savetxt(
-                make_path(config["data_path"] + "/loss.txt"),
-                loss,
-                fmt="%.8f"
-            )
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            breakpoint()
-    if acc:
-        try:
-            if len(acc) != 0:
-                np.savetxt(
-                    make_path(config["data_path"] + "/acc.txt"),
-                    acc,
-                    fmt="%.8f"
-                )
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            breakpoint()
-
-    if spk_rec:
-        try:
-            spk_rec_to_file(
-                data = spk_rec,
-                identifier = identifier,
-                path = config["data_path"] + "/rec/"
-            )
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            breakpoint()
-
-
-
-
 
 def get_shortest_observation(
         data: torch.utils.data.DataLoader
@@ -305,11 +171,14 @@ def get_shortest_observation(
     return shortest # 307 in the whole dataset
 
 def get_longest_observation(
-        data: torch.utils.data.DataLoader
+        data: torch.utils.data.DataLoader = None
 ) -> int:
     '''
     Function for getting the longest observation in the dataset.
     '''
+    if data is None:
+        return 314
+    
     longest = 0
     for x, y in tqdm.tqdm(data):
         if x.shape[0] > longest:
