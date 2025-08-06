@@ -421,7 +421,7 @@ class DataHandler:
                         s = arr[step, arr[step] >= 1] ** 2
                     )
 
-
+        plt.tight_layout()
         plt.show()
 
         
