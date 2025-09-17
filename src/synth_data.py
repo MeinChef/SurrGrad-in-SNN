@@ -1,11 +1,10 @@
-import torch
-import numpy as np
-import timeit
-import math
+from imports import torch
+from imports import numpy as np
+from imports import timeit
+from imports import math
+from imports import plt
 
-# https://stackoverflow.com/questions/14446128/append-vs-extend-efficiency
-
-class NewGenerator:
+class DataGenerator:
     def __init__(
         self,
         time_steps: int,
@@ -112,20 +111,22 @@ class NewGenerator:
         valid_to = np.nonzero(sample == 0)
 
         for neuron in range(sample.shape[1]):
-            mask = spikes[1] == neuron
-            to_move = math.ceil(len(spikes[0][mask]) * self.jitter)
-            selected_spikes = self.rng.choice(
-                spikes[0][mask],
-                size = to_move,
-                replace = False,
-                shuffle = False
-            )
-            new_positions = self.rng.choice(
-                valid_to[0][mask],
-                size = to_move,
-                replace = False,
-                shuffle = False
-            )
+            spk_mask = spikes[1] == neuron
+            move_mask = valid_to[1] == neuron
+            to_move = math.ceil(sum(spikes[0][spk_mask]) * self.jitter)
+            
+            # jumble spikes and select the first to_move ones 
+            # (same as random choice without replacement, but faster)
+            selected_spikes = self.rng.permutation(
+                spikes[0][spk_mask]
+            )[:to_move]
+
+            # generate new position from valid ones
+            new_positions = self.rng.permutation(
+                valid_to[0][move_mask]
+            )[:to_move]
+
+            # move spikes
             sample[selected_spikes, neuron] -= 1
             sample[new_positions, neuron] += 1
         
@@ -137,8 +138,16 @@ class NewGenerator:
         no_samples: int = 3000,
     ) -> tuple[np.ndarray, np.ndarray]:
         samples_per_class = math.ceil(no_samples / 2)
-        samples = []
-        labels  = []
+
+        # preallocate arrays
+        samples = np.empty(
+            shape = (no_samples, self.time_steps, self.neurons),
+            dtype = np.float32
+        )
+        labels  = np.empty(
+            shape = (no_samples,),
+            dtype = np.uint8
+        )
 
         for i in range(2):
             indices = self.rng.choice(
@@ -146,7 +155,7 @@ class NewGenerator:
                 size = samples_per_class,
                 replace = True
             )
-            for idx in indices:
+            for j, idx in enumerate(indices):
                 # generate sample with self.isis[idx] and self.rates[idx]
                 sample = self._generate_sample(
                     isi = self.isis[idx],
@@ -156,12 +165,11 @@ class NewGenerator:
                     sample = self._jitter(
                         sample = sample,
                     )
-                # append to list of samples
-                # append class label to list of labels
-                samples.append(sample)
-                labels.append(i)
-        samples = np.stack(samples)
-        labels = np.array(labels)
+                
+                # store samples and labels
+                samples[i * len(indices) + j] = sample
+            labels[i * len(indices) : (i + 1) * len(indices) - 1] = i
+
         return samples, labels
 
     def generate_dataset(
@@ -170,23 +178,41 @@ class NewGenerator:
         pass
     
 
+def vis(
+        sample: np.ndarray, 
+        label: int = 0
+    ) -> None:
+    plt.spy(
+        sample.T,
+        marker = ".",
+        markersize = 10,
+        aspect = "auto"
+    )
+    plt.xlabel("Time step")
+    plt.ylabel("Neuron")
+    plt.title("Label: " + str(label))
 
 
 
 if __name__ == "__main__":
 
-    data = NewGenerator(
+    gen = DataGenerator(
         time_steps = 100,
-        jitter = 0.1,
+        jitter = 0,
         min_isi = 1,
         max_isi = 10,
         min_rate = 5,
         max_rate = 20,
     )
-    data.generate_samples()
+    data, label = gen.generate_samples()
+    vis(data[0], label[0])
+    vis(data[100], label[100])
+    vis(data[-1], label[-1])
+    plt.show()
+
 
     # TODO: benchmark
     # print(timeit.timeit(
     #     data.generate_samples,
-    #     number = 10000
+    #     number = 1000
     # ))
