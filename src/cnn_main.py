@@ -1,6 +1,6 @@
 import misc
 import data
-from model import Model
+from cnn_model import Model
 from imports import functional
 from imports import torch
 
@@ -10,7 +10,7 @@ def main() -> None:
     train, test, num_classes = data.data_prep(config_data)
     handler = data.DataHandler(
         config_data,
-        )
+    )
 
     # if config_data["DEBUG"]:
     #     exit(0)
