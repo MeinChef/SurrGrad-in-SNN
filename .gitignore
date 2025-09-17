@@ -170,6 +170,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# vscode
+.vscode/
+
 
 # data folder for tonic
 data/
