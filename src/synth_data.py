@@ -71,6 +71,7 @@ class DataGenerator:
         )
 
         for i in range(self.neurons):
+            # array with valid start positions of a spike pair
             mask = np.ones(
                 (self.time_steps - isi,), 
                 dtype = bool
@@ -78,12 +79,18 @@ class DataGenerator:
 
             cur_no = 0
             while cur_no < spk_pairs:
-                sample = self.rng.choice(
-                    np.flatnonzero(mask),
-                    size = (1,),
-                    replace = True,
-                    shuffle = False # not needed, but makes it faster
-                )[0]
+                # sample = self.rng.choice(
+                #     np.flatnonzero(mask),
+                #     size = (1,),
+                #     replace = True,
+                #     shuffle = False # not needed, but makes it faster
+                # )[0]
+                # select a random starting position
+                sample = np.flatnonzero(mask)
+                self.rng.shuffle(
+                    sample
+                )
+                sample = sample[0]
 
                 # set value directly in the array
                 out[sample, i] += 1
@@ -92,11 +99,14 @@ class DataGenerator:
                 # check boundaries and handle all cases
                 left = max(sample - isi, 0)
                 right = min(sample + isi + 1, len(mask))
+                # and invalidate the space around the just set pair
+                # to make sure there are no overlaps
                 mask[left:right] = False
                 cur_no += 1
                 
                 # break if no valid positions are left
                 if mask.sum() == 0:
+                    print("Warning: Did not generate all spike pairs, no valid positions left")
                     break
 
         return out
@@ -204,15 +214,18 @@ if __name__ == "__main__":
         min_rate = 5,
         max_rate = 20,
     )
-    data, label = gen.generate_samples()
-    vis(data[0], label[0])
-    vis(data[100], label[100])
-    vis(data[-1], label[-1])
-    plt.show()
 
+    # data, label = gen.generate_samples()
+    # vis(data[0], label[0])
+    # vis(data[100], label[100])
+    # vis(data[-1], label[-1])
+    # plt.show()
 
+    print("Starting Benchmark...")
     # TODO: benchmark
-    # print(timeit.timeit(
-    #     data.generate_samples,
-    #     number = 1000
-    # ))
+    print(timeit.timeit(
+        gen.generate_samples,
+        number = 100
+    ))
+    # 3.1s with choice
+    # 1.66s with shuffle
