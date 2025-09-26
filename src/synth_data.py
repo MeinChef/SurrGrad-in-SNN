@@ -4,6 +4,8 @@ from imports import timeit
 from imports import math
 from imports import plt
 
+DEBUG = True
+
 class DataGenerator:
     def __init__(
         self,
@@ -62,7 +64,7 @@ class DataGenerator:
     ) -> np.ndarray:
         
         # calculate number of spikepairs, given in [source]
-        spk_pairs = int(rate * (self.time_steps / 1000))
+        spk_pairs = math.floor(rate * (self.time_steps / 1000))
 
         # preallocate the resulting array
         out = np.zeros(
@@ -119,11 +121,13 @@ class DataGenerator:
         
         spikes = np.nonzero(sample)
         valid_to = np.nonzero(sample == 0)
-
+        breakpoint()
         for neuron in range(sample.shape[1]):
-            spk_mask = spikes[1] == neuron
+            spk_mask = spikes[1] == neuron # wut
             move_mask = valid_to[1] == neuron
-            to_move = math.ceil(sum(spikes[0][spk_mask]) * self.jitter)
+            to_move = math.ceil(spk_mask.sum() * self.jitter)
+            # to_move = math.ceil(sum(spikes[0][spk_mask]) * self.jitter) # dat is käse, weil 
+            # spikes[0] indices sind und nicht die spikes
             
             # jumble spikes and select the first to_move ones 
             # (same as random choice without replacement, but faster)
@@ -171,11 +175,24 @@ class DataGenerator:
                     isi = self.isis[idx],
                     rate = self.rates[idx]
                 )
+                if DEBUG:
+                    sample_sum = [sample[:,i].sum() for i in range(self.neurons)]
+                    print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
+                    print(f"Sample sum per neuron: {sample_sum}.\n" +
+                          f"Expected sum per neuron: {self.rates[idx] * self.neurons * (self.time_steps / 1000) * 2}")
+                    
                 if self.jitter > 0:
                     sample = self._jitter(
                         sample = sample,
                     )
-                
+
+                    if DEBUG:
+                        print(f"After jittering:\n" +
+                              f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
+                              f"Expected to match sample sum per neuron.\n" +
+                              f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"
+                              )
+                        
                 # store samples and labels
                 samples[i * len(indices) + j] = sample
             labels[i * len(indices) : (i + 1) * len(indices) - 1] = i
@@ -207,25 +224,26 @@ def vis(
 if __name__ == "__main__":
 
     gen = DataGenerator(
-        time_steps = 100,
-        jitter = 0,
+        time_steps = 1000,
+        jitter = 0.3,
         min_isi = 1,
         max_isi = 10,
         min_rate = 5,
         max_rate = 20,
     )
 
-    # data, label = gen.generate_samples()
-    # vis(data[0], label[0])
+    data, label = gen.generate_samples(no_samples = 2)
+    exit(0)
+    vis(data[0], label[0])
     # vis(data[100], label[100])
     # vis(data[-1], label[-1])
-    # plt.show()
+    plt.show()
 
-    print("Starting Benchmark...")
+    # print("Starting Benchmark...")
     # TODO: benchmark
-    print(timeit.timeit(
-        gen.generate_samples,
-        number = 100
-    ))
+    # print(timeit.timeit(
+    #     gen.generate_samples,
+    #     number = 100
+    # ))
     # 3.1s with choice
     # 1.66s with shuffle
