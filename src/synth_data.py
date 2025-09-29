@@ -1,8 +1,8 @@
-from imports import torch
 from imports import numpy as np
-from imports import timeit
 from imports import math
+from imports import torch
 from imports import plt
+# from imports import timeit
 
 DEBUG = True
 
@@ -16,14 +16,16 @@ class DataGenerator:
         max_isi: int = 10,
         min_rate: int = 5,
         max_rate: int = 20,
+        precision: np.dtype = np.float32
     ):
         self.time_steps = time_steps
         self.jitter = jitter
         self.neurons = neurons
-        self.min_isi  = min_isi
-        self.max_isi  = max_isi
-        self.min_rate = min_rate
-        self.max_rate = max_rate
+        self._min_isi  = min_isi
+        self._max_isi  = max_isi
+        self._min_rate = min_rate
+        self._max_rate = max_rate
+        self._precision = precision
 
         # create a grid of all possible (isi, rate) pairs
         value_grid = np.meshgrid(
@@ -52,7 +54,8 @@ class DataGenerator:
         # fill the "upper triangle" from [0,0] to [n_rows, n_cols]
         for i in range(arr.shape[0]):
             for j in range(arr.shape[1]):
-                # everything that is above or on the slope is 1
+                # everything that is above or on the slope is class 1
+                # everything below stays class 0.
                 if j >= i * slope:
                     arr[i, j] = 1
         return arr
@@ -69,7 +72,7 @@ class DataGenerator:
         # preallocate the resulting array
         out = np.zeros(
             shape = (self.time_steps, self.neurons),
-            dtype = np.float32,
+            dtype = self._precision,
         )
 
         for i in range(self.neurons):
@@ -81,12 +84,6 @@ class DataGenerator:
 
             cur_no = 0
             while cur_no < spk_pairs:
-                # sample = self.rng.choice(
-                #     np.flatnonzero(mask),
-                #     size = (1,),
-                #     replace = True,
-                #     shuffle = False # not needed, but makes it faster
-                # )[0]
                 # select a random starting position
                 sample = np.flatnonzero(mask)
                 self.rng.shuffle(
@@ -113,22 +110,23 @@ class DataGenerator:
 
         return out
     
-    # TODO: does not work, optimize
     def _jitter(
         self,
         sample: np.ndarray,
     ) -> np.ndarray:
         
+        # get indices where spikes are, and where they aren't 
         spikes = np.nonzero(sample)
         valid_to = np.nonzero(sample == 0)
-        # breakpoint()
+
+
         for neuron in range(sample.shape[1]):
-            spk_mask = spikes[1] == neuron # wut
+            # create a mask for each neuron
+            # that is because spikes should not change their associated neuron
+            spk_mask = spikes[1] == neuron
             move_mask = valid_to[1] == neuron
             to_move = math.ceil(spk_mask.sum() * self.jitter)
-            # to_move = math.ceil(sum(spikes[0][spk_mask]) * self.jitter) # dat is käse, weil 
-            # spikes[0] indices sind und nicht die spikes
-            
+
             # jumble spikes and select the first to_move ones 
             # (same as random choice without replacement, but faster)
             selected_spikes = self.rng.permutation(
@@ -140,7 +138,8 @@ class DataGenerator:
                 valid_to[0][move_mask]
             )[:to_move]
 
-            # move spikes
+            # move spikes (or remove the original positions of the spikes moved)
+            # (and add spikes where they got moved to)
             sample[selected_spikes, neuron] -= 1
             sample[new_positions, neuron] += 1
         
@@ -156,7 +155,7 @@ class DataGenerator:
         # preallocate arrays
         samples = np.empty(
             shape = (no_samples, self.time_steps, self.neurons),
-            dtype = np.float32
+            dtype = self._precision
         )
         labels  = np.empty(
             shape = (no_samples,),
@@ -164,6 +163,8 @@ class DataGenerator:
         )
 
         for i in range(2):
+            # generate samples by drawing an index from the class assignment array
+            # where the class is the specified one 
             indices = self.rng.choice(
                 np.nonzero(self.classes == i)[0],
                 size = samples_per_class,
@@ -171,10 +172,13 @@ class DataGenerator:
             )
             for j, idx in enumerate(indices):
                 # generate sample with self.isis[idx] and self.rates[idx]
+                # this works, because all arrays got flattened
                 sample = self._generate_sample(
                     isi = self.isis[idx],
                     rate = self.rates[idx]
                 )
+
+                # some debug print statements for roughly checking whether the jittering worked
                 if DEBUG:
                     sample_sum = [sample[:,i].sum() for i in range(self.neurons)]
                     print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
@@ -185,7 +189,7 @@ class DataGenerator:
                     sample = self._jitter(
                         sample = sample,
                     )
-
+                    
                     if DEBUG:
                         print("After jittering:\n" +
                               f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
@@ -200,10 +204,34 @@ class DataGenerator:
         return samples, labels
 
     def generate_dataset(
-        self
+        self,
+        no_samples: int = 3000,
+        batch_size: int = 256,
+        shuffle: bool = True,
+        prefetch: int = 16,
+        workers: int = torch.get_num_threads() - 4
+
     ) -> torch.utils.data.DataLoader:
-        pass
-    
+        # generate the samples
+        data, labels = self.generate_samples(no_samples = no_samples)
+        
+        # put them in a dataset with the correct dtype
+        ds = torch.utils.data.TensorDataset(
+            torch.from_numpy(data), 
+            torch.from_numpy(labels.astype(self._precision))
+        )
+
+        # and make a nice dataloader out of it
+        loader = torch.utils.data.DataLoader(
+            dataset = ds,
+            batch_size = batch_size,
+            shuffle = shuffle,
+            num_workers = workers,
+            pin_memory = True,
+            prefetch_factor = prefetch
+        )
+
+        return loader
 
 def vis(
         sample: np.ndarray, 
@@ -221,35 +249,35 @@ def vis(
 
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    gen = DataGenerator(
-        time_steps = 1000,
-        # jitter = 0.3,
-        min_isi = 1,
-        max_isi = 10,
-        min_rate = 5,
-        max_rate = 20,
-    )
+#     gen = DataGenerator(
+#         time_steps = 1000,
+#         # jitter = 0.3,
+#         min_isi = 1,
+#         max_isi = 10,
+#         min_rate = 5,
+#         max_rate = 20,
+#     )
 
-    data, label = gen.generate_samples(no_samples = 2)
-    vis(data[0], label[0])
-    # vis(data[100], label[100])
-    # vis(data[-1], label[-1])
-    plt.show()
+#     data, label = gen.generate_samples(no_samples = 2)
+#     vis(data[0], label[0])
+#     # vis(data[100], label[100])
+#     # vis(data[-1], label[-1])
+#     plt.show()
 
-    gen.jitter = 0.3
-    data, label = gen.generate_samples(no_samples = 2)
-    vis(data[0], label[0])
-    plt.show()
-    exit(0)
+#     gen.jitter = 0.3
+#     data, label = gen.generate_samples(no_samples = 2)
+#     vis(data[0], label[0])
+#     plt.show()
+#     exit(0)
 
 
-    # print("Starting Benchmark...")
-    # TODO: benchmark
-    # print(timeit.timeit(
-    #     gen.generate_samples,
-    #     number = 100
-    # ))
-    # 3.1s with choice
-    # 1.66s with shuffle
+#     # print("Starting Benchmark...")
+#     # TODO: benchmark
+#     # print(timeit.timeit(
+#     #     gen.generate_samples,
+#     #     number = 100
+#     # ))
+#     # 3.1s with choice
+#     # 1.66s with shuffle
