@@ -121,7 +121,7 @@ class DataGenerator:
         
         spikes = np.nonzero(sample)
         valid_to = np.nonzero(sample == 0)
-        breakpoint()
+        # breakpoint()
         for neuron in range(sample.shape[1]):
             spk_mask = spikes[1] == neuron # wut
             move_mask = valid_to[1] == neuron
@@ -187,9 +187,9 @@ class DataGenerator:
                     )
 
                     if DEBUG:
-                        print(f"After jittering:\n" +
+                        print("After jittering:\n" +
                               f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
-                              f"Expected to match sample sum per neuron.\n" +
+                              "Expected to match sample sum per neuron.\n" +
                               f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"
                               )
                         
@@ -225,7 +225,7 @@ if __name__ == "__main__":
 
     gen = DataGenerator(
         time_steps = 1000,
-        jitter = 0.3,
+        # jitter = 0.3,
         min_isi = 1,
         max_isi = 10,
         min_rate = 5,
@@ -233,11 +233,17 @@ if __name__ == "__main__":
     )
 
     data, label = gen.generate_samples(no_samples = 2)
-    exit(0)
     vis(data[0], label[0])
     # vis(data[100], label[100])
     # vis(data[-1], label[-1])
     plt.show()
+
+    gen.jitter = 0.3
+    data, label = gen.generate_samples(no_samples = 2)
+    vis(data[0], label[0])
+    plt.show()
+    exit(0)
+
 
     # print("Starting Benchmark...")
     # TODO: benchmark
