@@ -69,4 +69,4 @@ model:
 
   # record hidden layers?
   record: False
-  samples: 50
+  samples: 10
