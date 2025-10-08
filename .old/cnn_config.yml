@@ -1,26 +1,21 @@
-data:
-  neurons: &neurons
-    val: 10
-  time_steps: &time_steps 
-    val: 1000
-  no_samples: 3000
-  jitter: 0.0
-  min_isi: 1
-  max_isi: 10
-  min_rate: 5
-  max_rate: 20
+config_data:
+  seed: 42
+  DEBUG: False
+  data_path: "data"
+  cache_path: "data/cache/"
 
-  batch_size: 256
-  shuffle: True
-  prefetch: 16
 
-model:
-  features: *neurons
-  neurons_hidden_1: 1024
-  neurons_hidden_2: 512
-  neurons_out: 2
-  neuron_beta: 0.8
-  time_steps: *time_steps
+  filter_time: 10000
+  time_window: 1000
+  batch_size: 64
+  worker: 4
+  prefetch: 10
+
+  # available encodings: rate, latency, latency_timing
+  target: "rate"
+
+
+config_model:
 
   # hyperparameters
   loss:
@@ -45,7 +40,7 @@ model:
     type: "adam" 
     learning_rate: 0.03
     betas: [0.9, 0.99]
-
+  
   surrogate:
     # available in snntorch: 
     # atan [arg: alpha]
@@ -61,12 +56,21 @@ model:
     slope: 25
     threshold: null
 
-  # training parameters
-  epochs: 5
-  # partial training/testing in minibatches
+  # neuron configurations
+  neuron:
+    beta: 0.5 # of neurons
+
+  # training parametres
+  epochs: 1
+  # partial training in minibatches. to disable set to -1
   partial_training: 50
   partial_testing: 10
 
+
   # record hidden layers?
-  record: False
-  samples: 50
+  record_train: False
+  record_test: True
+  samples_per_class: 10
+
+  DEBUG: False
+  PROGRESS: False

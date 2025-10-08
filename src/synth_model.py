@@ -3,7 +3,7 @@ from imports import snntorch as snn
 from imports import functional
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
-class SynthModel:
+class SynthModel(torch.nn.Module):
     def __init__(
         self,
         config: dict
@@ -28,12 +28,12 @@ class SynthModel:
         ###########################
 
         self.con1 = torch.nn.Linear(
-            in_features = self.config["neurons_in"],
+            in_features = self.config["features"],
             out_features = self.config["neurons_hidden_1"],
             device = self.device
         )
         self.neuron1 = snn.Leaky(
-            beta = config["neuron"]["beta"], 
+            beta = config["neuron_beta"], 
             spike_grad = surrogate, 
             init_hidden = False
         )
@@ -44,7 +44,7 @@ class SynthModel:
             device = self.device
         )
         self.neuron2 = snn.Leaky(
-            beta = config["neuron"]["beta"], 
+            beta = config["neuron_beta"], 
             spike_grad = surrogate,
             init_hidden = False
         )
@@ -55,7 +55,7 @@ class SynthModel:
             device = self.device
         )
         self.neuron3 = snn.Leaky(
-            beta = config["neuron"]["beta"], 
+            beta = config["neuron_beta"], 
             spike_grad = surrogate,
             init_hidden = False
         )
@@ -69,10 +69,21 @@ class SynthModel:
             params  = self.parameters()
         )
 
+        self._time_steps = config["time_steps"]
+        self._epochs = config["epochs"]
+        self._partial_train = config["partial_training"]
+        self._partial_test  = config["partial_testing"]
 
+        self._record = False
+        self._samples = config["samples"]
 
         # send to gpu
         self.to(device = self.device)
+
+    ####################################
+    ### DEFINITION OF MAIN FUNCTIONS ###
+    ####################################
+
 
     def forward(
         self,
@@ -83,7 +94,12 @@ class SynthModel:
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
 
-        for step in range(self.config["time_steps"]):  
+        out = torch.empty(
+            [self.cur_steps, x.shape[1], 10], 
+            device = self.device
+        )
+
+        for step in range(self._time_steps):  
             # layer 1
             cur1 = self.con1(x[step])
             spk1, mem1 = self.neuron1(cur1, mem1)
@@ -96,4 +112,84 @@ class SynthModel:
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
-        return spk3, mem3
+            out[step] = spk3
+
+            if self._record:
+                self.rec_spk1[step] = spk1
+                self.rec_spk2[step] = spk2
+                self.rec_spk3[step] = spk3
+
+        return out
+
+    def fit(
+        self,
+        data: torch.utils.data.DataLoader
+    ) -> tuple[torch.Tensor]:
+        
+        if not self._build:
+            self.build_vaules(next(iter(data)))
+            self._build = True
+        
+
+    def eval(
+        self,
+        data: torch.utils.data.DataLoader
+    ) -> tuple[torch.Tensor]:
+        
+        # check if model has been build already 
+        if not self._build:
+            self.build_vaules(next(iter(data)))
+            self._build = True
+
+
+    ######################################
+    ### DEFINITION OF HELPER FUNCTIONS ###
+    ######################################
+
+    def build_vaules(
+        self,
+        x: torch.Tensor
+    ) -> None:
+        """
+        Function needs to be called before starting to train the model.
+        It sets and infers values needed for training.
+        """
+
+        self._time_steps = x.shape[0]
+
+
+    def _init_tensors__(
+            self
+    ) -> None:
+        self.cur_steps = -1
+        
+        if self._record:
+            self.rec_spk1 = torch.zeros(
+                [
+                    self._time_steps,
+                    *self.config["layer1"]
+                ],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )
+
+            self.rec_spk2 = torch.zeros(
+                [
+                    self._time_steps,
+                    *self.config["layer2"]
+                ],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )
+
+            self.rec_spk3 = torch.zeros(
+                [
+                    self._time_steps,
+                    *self.config["layer3"]
+                ],
+                dtype = torch.float32,
+                device = "cpu",
+                requires_grad = False
+            )

@@ -16,7 +16,7 @@ def check_working_directory() -> bool:
     Tries to descend one folder
     '''
 
-    if "SurrGrad-in-SNN" in os.getcwd():
+    if "SurrGrad-in-SNN" in os.getcwd()[-16:]:
         return True
     else:
         if "SurrGrad-in-SNN" in os.listdir():
