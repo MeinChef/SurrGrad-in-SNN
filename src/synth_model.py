@@ -1,6 +1,5 @@
 from imports import torch
 from imports import snntorch as snn
-from imports import functional
 from imports import tqdm
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
@@ -75,7 +74,7 @@ class SynthModel(torch.nn.Module):
         self._partial_train = config["partial_training"]
         self._partial_test  = config["partial_testing"]
 
-        self._record = False
+        self._record = config["record"]
         self._samples = config["samples"]
 
         # send to gpu
@@ -173,8 +172,10 @@ class SynthModel(torch.nn.Module):
 
     def evaluate(
         self,
-        data: torch.utils.data.DataLoader
-    ) -> tuple[torch.Tensor]:
+        data: torch.utils.data.DataLoader,
+        record_per_class: bool = False
+    ) -> tuple[list, list, dict | None]:
+        
         
         # check if model has been build already 
         if not self._build:
@@ -183,8 +184,18 @@ class SynthModel(torch.nn.Module):
         # pre-define variables
         loss_hist = []
         acc_hist  = []
-        rec_list  = [[], [], []]
+        if self._record:
+            if record_per_class:
+                rec_dict  = {}
+                for cls in range(self._counter.shape[0]):
+                    rec_dict[f"class_{cls}"] = [[], [], []]
 
+            else:
+                rec_dict = {
+                    "class_0": [[], [], []]
+                }
+        else:
+            rec_dict = None
         # set model in evaulating mode
         self.eval()
 
@@ -199,12 +210,23 @@ class SynthModel(torch.nn.Module):
                 # make prediction
                 if self._record:
                     # create a mask for the hidden layer recordings
-                    mask = self.create_mask(target)
+                    mask = self.create_mask(
+                        target = target,
+                        per_class = record_per_class
+                        )
                     if torch.is_tensor(mask):
-                        # separate the recordings to the individual layers
-                        rec_list[0].append(self.rec_spk1[:, mask])
-                        rec_list[1].append(self.rec_spk2[:, mask])
-                        rec_list[2].append(self.rec_spk3[:, mask])
+                        if record_per_class:
+                            # write the recordings per class
+                            for cls in range(self._counter.shape[0]):
+                                # separate the recordings to the individual layers
+                                rec_dict[f"class_{cls}"][0].append(self.rec_spk1[:, mask[cls]].detach().clone().cpu())
+                                rec_dict[f"class_{cls}"][1].append(self.rec_spk2[:, mask[cls]].detach().clone().cpu())
+                                rec_dict[f"class_{cls}"][2].append(self.rec_spk3[:, mask[cls]].detach().clone().cpu())
+                        else:
+                            # and no distinction between classes
+                            rec_dict["class_0"][0].append(self.rec_spk1[:, mask].detach().clone().cpu())
+                            rec_dict["class_0"][1].append(self.rec_spk2[:, mask].detach().clone().cpu())
+                            rec_dict["class_0"][2].append(self.rec_spk3[:, mask].detach().clone().cpu())
                 else:
                     pred = self.forward(x)
 
@@ -222,7 +244,7 @@ class SynthModel(torch.nn.Module):
             
         torch.cuda.empty_cache()
         
-        return loss_hist, acc_hist
+        return loss_hist, acc_hist, rec_dict
 
     ######################################
     ### DEFINITION OF HELPER FUNCTIONS ###
@@ -231,6 +253,7 @@ class SynthModel(torch.nn.Module):
     def create_mask(
             self,
             target: torch.Tensor,
+            per_class: bool = True
     ) -> torch.Tensor | bool:
 
         '''
@@ -240,29 +263,38 @@ class SynthModel(torch.nn.Module):
         :param target: tensor - the target labels for the minibatch
         :type target: torch.Tensor, required
         :return: mask - a boolean mask for the hidden layer recordings or False if there is no value in this batch to be recorded
-        :rtype: torch.Tensor
+        :rtype: torch.Tensor | bool
         '''
 
-        # TODO:
-        # add param cls: int = None
-        # and return only the mask for the specified class - since
-        # as of now there are no ways to determine in retrospective which recording
-        # belongs to wich class
-
-
+        # sanity checks
+        if not self._counter.shape[0] == self.config["neurons_out"]:
+            raise ValueError(
+                "Something went wrong. Shapes of _counter and config['neurons_out'] do not match." + 
+                f"Actual:\n_counter: {self._counter.shape}\nneurons_out: {self.config["neurons_out"]}"
+                )
+        
+        if (self._counter < 0).any():
+            raise ValueError(
+                "Something went wrong. Negative _counter encountered." +
+                f"Values: {self._counter}"
+            )
+        
+        # all classes have been recorded the specified amount of times
+        # no need to create a mask
+        if (self._counter == 0).all():
+            
+            return False
+        
+        # pre-allocate the mask
         mask = torch.zeros_like(
             target, 
             dtype = torch.bool, 
-            device = torch.device("cpu")
+            device = target.device
         )
+        mask = mask.unsqueeze(0).repeat(self._counter.shape[0], 1)
 
-        if (self._counter == 0).all():
-            # all classes have been recorded the specified amount of times
-            # no need to create a mask
-            return False
-
-        indices = []
-        for cls in range(self.config["neurons_out"]):
+        # loop over every class and save if it is contained in the target tensor
+        for cls in range(self._counter.shape[0]):
             if self._counter[cls] == 0:
                 # class has been already recorded
                 continue
@@ -270,13 +302,20 @@ class SynthModel(torch.nn.Module):
                 # get indices for the class
                 # since target is a 1D tensor, we will get one 1D tensor with indices
                 idxs = torch.nonzero(target == cls, as_tuple = True)[0]
+                # this is legal, even on tensors that are smaller than self._counter[cls]
+                # though it feels highly illegal
                 idxs = idxs[:self._counter[cls]]
                 
                 # substract the count of found samples
                 self._counter[cls] -= len(idxs)
-                indices.append(idxs)
+                # create a mask for this class
+                mask[cls][idxs] = True
 
-        return 
+        # collapse the masks into one tensor if wanted
+        if not per_class:
+            mask = mask.sum(dim = 0)
+
+        return mask
 
 
     def build_vaules(
