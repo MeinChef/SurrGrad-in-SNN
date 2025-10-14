@@ -17,9 +17,9 @@ def load_config(path: str = "config.yml") -> tuple[dict, dict]:
         configs = yaml.safe_load(file)
 
     # set the default values for hidden variables
-    configs["config_model"]["batch_size"] = configs["config_data"]["batch_size"]
+    # configs["config_model"]["batch_size"] = configs["config_data"]["batch_size"]
 
-    return configs["config_data"], configs["config_model"]
+    return configs["data"], configs["model"]
 
 def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
     if config["DEBUG"]:
@@ -138,19 +138,18 @@ def data_prep(config: dict) -> tuple[torch.utils.data.DataLoader, torch.utils.da
 class DataHandler:
     def __init__(
         self,
-        cfg: dict,
+        path: str = "data/",
     ) -> None:
         """
         Class that handles the recording and loading of the data that is being created during training.
         """
-        self.config = cfg
+        self.path = path
         self.now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     def spk_rec_to_file(
         self,
         data: list = None,
         identifier: str = None,
-        # path: str = "data/rec/"
     ) -> None:
         """
         Function for saving the spike recording of the hidden layers into a file on disk.
@@ -166,7 +165,7 @@ class DataHandler:
         """
 
         # make path os-independent
-        path = make_path(self.config["data_path"] + "/rec/")
+        path = make_path(self.path + "/rec/")
 
         # TODO: change path resolving with str.split() and os.path.join()
         if isinstance(identifier, list):
@@ -191,9 +190,8 @@ class DataHandler:
             np.savez_compressed(os.path.join(path, identifier[i]), *layer)
 
     def load_spk_rec(
-            self,
-            # config: dict,
-            identifier: str = "test-ep0"
+        self,
+        identifier: str = "test-ep0"
     ) -> list[np.ndarray]:
         """
         Function for loading the spike recordings of the hidden layers from a file on disk.
@@ -208,7 +206,7 @@ class DataHandler:
         :rtype: list[np.ndarray]
         """
 
-        paths = [make_path(self.config["data_path"] + "/rec/" + identifier + f"-layer{layer}.npz") for layer in range(1,4)]
+        paths = [make_path(self.path + "/rec/" + identifier + f"-layer{layer}.npz") for layer in range(1,4)]
 
         recordings = []
         for path in paths:
@@ -242,12 +240,11 @@ class DataHandler:
         return recordings
 
     def flush_to_file(
-            self,
-            # config: dict, 
-            loss: list, 
-            acc: list = None, 
-            spk_rec: list[list,list,list] = None,
-            identifier: str = None
+        self,
+        loss: list, 
+        acc: list = None, 
+        spk_rec: list[list,list,list] = None,
+        identifier: str = None
     ) -> None:
         """
         Saves the output from the model to a file, human-readable.
@@ -268,7 +265,7 @@ class DataHandler:
         if len(loss) != 0:
             try:
                 np.savetxt(
-                    make_path(self.config["data_path"] + "/loss.txt"),
+                    make_path(self.path + "/loss.txt"),
                     loss,
                     fmt="%.8f"
                 )
@@ -279,7 +276,7 @@ class DataHandler:
             try:
                 if len(acc) != 0:
                     np.savetxt(
-                        make_path(self.config["data_path"] + "/acc.txt"),
+                        make_path(self.path + "/acc.txt"),
                         acc,
                         fmt="%.8f"
                     )
@@ -312,7 +309,7 @@ class DataHandler:
 
         rec = []
         if infer_epochs:
-            cont = os.listdir(make_path(self.config["data_path"] + "/rec/"))
+            cont = os.listdir(make_path(self.path + "/rec/"))
             cont = [file for file in cont if identifier in file]
 
             epochs = 0
