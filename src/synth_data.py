@@ -29,8 +29,8 @@ class DataGenerator:
 
         # create a grid of all possible (isi, rate) pairs
         value_grid = np.meshgrid(
-            np.arange(self.min_isi, self.max_isi + 1),
-            np.arange(self.min_rate, self.max_rate + 1)
+            np.arange(self._min_isi, self._max_isi + 1),
+            np.arange(self._min_rate, self._max_rate + 1)
         )
         # create class assignment matrix (half of the values are class 0, half class 1)
         class_assignment = self._class_assign_matrix(
