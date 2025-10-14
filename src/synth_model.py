@@ -6,11 +6,11 @@ from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 class SynthModel(torch.nn.Module):
     def __init__(
         self,
-        config: dict
+        config: dict,
+        record: bool | None = None
     ) -> None:
         
         super().__init__()
-        self.config = config
 
         # check backend
         if torch.cuda.is_available():
@@ -21,15 +21,15 @@ class SynthModel(torch.nn.Module):
             self.device = torch.device("cpu")
 
         # resolve gradient
-        surrogate = resolve_gradient(config = self.config["surrogate"])
+        surrogate = resolve_gradient(config = config["surrogate"])
 
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
-
+        breakpoint()
         self.con1 = torch.nn.Linear(
-            in_features = self.config["features"],
-            out_features = self.config["neurons_hidden_1"],
+            in_features = config["features"]["val"],
+            out_features = config["neurons_hidden_1"],
             device = self.device
         )
         self.neuron1 = snn.Leaky(
@@ -39,8 +39,8 @@ class SynthModel(torch.nn.Module):
         )
 
         self.con2 = torch.nn.Linear(
-            in_features = self.config["neurons_hidden_1"],
-            out_features = self.config["neurons_hidden_2"],
+            in_features = config["neurons_hidden_1"],
+            out_features = config["neurons_hidden_2"],
             device = self.device
         )
         self.neuron2 = snn.Leaky(
@@ -50,8 +50,8 @@ class SynthModel(torch.nn.Module):
         )
 
         self.con3 = torch.nn.Linear(
-            in_features = self.config["neurons_hidden_2"],
-            out_features = self.config["neurons_out"],
+            in_features = config["neurons_hidden_2"],
+            out_features = config["neurons_out"],
             device = self.device
         )
         self.neuron3 = snn.Leaky(
@@ -62,17 +62,18 @@ class SynthModel(torch.nn.Module):
 
 
         # resolve additional bits
-        self.lossfn = resolve_loss(config = self.config["loss"])
-        self.acc    = resolve_acc(config = self.config["accuracy"])
+        self.lossfn = resolve_loss(config = config["loss"])
+        self.acc    = resolve_acc(config = config["accuracy"])
         self.optim  = resolve_optim(
-            config  = self.config["optimiser"], 
+            config  = config["optimiser"], 
             params  = self.parameters()
         )
 
-        self._time_steps = config["time_steps"]
+        self._time_steps = config["time_steps"]["val"]
         self._epochs = config["epochs"]
         self._partial_train = config["partial_training"]
         self._partial_test  = config["partial_testing"]
+        self._neurons_out = config["neurons_out"]
 
         self._record = config["record"]
         self._samples = config["samples"]
@@ -97,7 +98,7 @@ class SynthModel(torch.nn.Module):
         out = torch.empty(
             [
                 self._time_steps,
-                self.config["neurons_out"]
+                self._neurons_out
             ], 
             device = self.device
         )
@@ -162,7 +163,7 @@ class SynthModel(torch.nn.Module):
             loss_hist.append(loss.item())
             acc_hist.append(acc)
 
-            if i == self.config["partial_training"]:
+            if i == self._partial_train:
                 break
         
         torch.cuda.empty_cache()
@@ -239,7 +240,7 @@ class SynthModel(torch.nn.Module):
                 loss_hist.append(loss.item())
                 acc_hist.append(acc)
 
-                if i == self.config["partial_testing"]:
+                if i == self._partial_test:
                     break
             
         torch.cuda.empty_cache()
@@ -267,10 +268,10 @@ class SynthModel(torch.nn.Module):
         '''
 
         # sanity checks
-        if not self._counter.shape[0] == self.config["neurons_out"]:
+        if not self._counter.shape[0] == self._neurons_out:
             raise ValueError(
                 "Something went wrong. Shapes of _counter and config['neurons_out'] do not match." + 
-                f"Actual:\n_counter: {self._counter.shape}\nneurons_out: {self.config["neurons_out"]}"
+                f"Actual:\n_counter: {self._counter.shape}\nneurons_out: {self._neurons_out}"
                 )
         
         if (self._counter < 0).any():
@@ -393,7 +394,7 @@ class SynthModel(torch.nn.Module):
         )
 
         self._counter = torch.full(
-            size = (self.config["neurons_out"],),
+            size = (self._neurons_out,),
             fill_value = self._samples,
             dtype = torch.int32,
             device = torch.device("cpu")
