@@ -2,8 +2,11 @@ from synth_data import DataGenerator
 from synth_model import SynthModel
 from data import load_config, DataHandler
 from misc import check_working_directory
+from imports import argparse
 
-def main():
+def main(
+    args: argparse.Namespace
+):
     cfg_data, cfg_model = load_config()
 
     # initialise datagenerator
@@ -19,20 +22,46 @@ def main():
     )
 
     # initialise model
-    model = SynthModel()
+    model = SynthModel(
+        config = cfg_model,
+        record = args.record_hidden
+    )
+
+    # initialise Datahandler
+    if args.record_hidden:
+        handler = DataHandler(
+            path = args.data_path
+        )
 
     # generate dataset
     dataset = datagen.generate_dataset(
-        no_samples = cfg_data["no_samples"],
+        no_samples = cfg_data["no_samples"]["val"],
         batch_size = cfg_data["batch_size"],
         shuffle = cfg_data["shuffle"],
         prefetch = cfg_data["prefetch"]
     )
 
 def resolve_arguments():
-    raise NotImplementedError()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data-path",
+        "-d",
+        type = str,
+        required = False,
+        default = "data/",
+        help = "Path to the data directory. Defaults to ./data/"
+    )
+    parser.add_argument(
+        "--record-hidden",
+        "-r",
+        action = argparse.BooleanOptionalAction,
+        required = False,
+        help = "Flag whether to record the hidden layers and save them"
+    )
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
     check_working_directory()
-    # resolve_arguments()
-    main()
+    args = resolve_arguments()
+    main(args)
