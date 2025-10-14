@@ -68,5 +68,4 @@ model:
   partial_testing: 10
 
   # record hidden layers?
-  record: False
   samples: 10
