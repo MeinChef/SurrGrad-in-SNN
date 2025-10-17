@@ -1,10 +1,11 @@
 from imports import numpy as np
 from imports import math
+from imports import os
 from imports import torch
 from imports import plt
 # from imports import timeit
 
-DEBUG = True
+DEBUG = False
 
 class DataGenerator:
     def __init__(
@@ -152,6 +153,11 @@ class DataGenerator:
     ) -> tuple[np.ndarray, np.ndarray]:
         samples_per_class = math.ceil(no_samples / 2)
 
+        if DEBUG:
+            print(f"Samples:\n Type: {type(no_samples)}\n Actual: {no_samples}")
+            print(f"Neurons:\n Type: {type(self.neurons)}\n Actual: {self.neurons}")
+            print(f"TimeSteps:\n Type: {type(self.time_steps)}\n Actual: {self.time_steps}")
+
         # preallocate arrays
         samples = np.empty(
             shape = (no_samples, self.time_steps, self.neurons),
@@ -198,6 +204,10 @@ class DataGenerator:
                               )
                         
                 # store samples and labels
+                # i * len(indices) specifies the initial offset from the array start
+                # as in: is it class one (saved from 0 - len(indices)) or is it class two
+                # which is saved from len(indices) to -1
+                # the +j is the offset from the start of each class.
                 samples[i * len(indices) + j] = sample
             labels[i * len(indices) : (i + 1) * len(indices) - 1] = i
 
@@ -209,7 +219,7 @@ class DataGenerator:
         batch_size: int = 256,
         shuffle: bool = True,
         prefetch: int = 16,
-        workers: int = torch.get_num_threads() - 4
+        workers: int = max(2, os.cpu_count() - 4)
 
     ) -> torch.utils.data.DataLoader:
         # generate the samples
@@ -217,7 +227,7 @@ class DataGenerator:
         
         # put them in a dataset with the correct dtype
         ds = torch.utils.data.TensorDataset(
-            torch.from_numpy(data), 
+            torch.from_numpy(data),
             torch.from_numpy(labels.astype(self._precision))
         )
 
