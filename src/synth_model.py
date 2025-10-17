@@ -26,7 +26,6 @@ class SynthModel(torch.nn.Module):
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
-        breakpoint()
         self.con1 = torch.nn.Linear(
             in_features = config["features"]["val"],
             out_features = config["neurons_hidden_1"],
@@ -75,7 +74,7 @@ class SynthModel(torch.nn.Module):
         self._partial_test  = config["partial_testing"]
         self._neurons_out = config["neurons_out"]
 
-        self._record = config["record"]
+        self._record = record
         self._samples = config["samples"]
 
         # send to gpu
@@ -97,6 +96,7 @@ class SynthModel(torch.nn.Module):
 
         out = torch.empty(
             [
+                x.shape[0],
                 self._time_steps,
                 self._neurons_out
             ], 
@@ -116,6 +116,7 @@ class SynthModel(torch.nn.Module):
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
+            breakpoint()
             out[step] = spk3
 
             if self._record:

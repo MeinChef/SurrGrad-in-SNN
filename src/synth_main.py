@@ -11,9 +11,9 @@ def main(
 
     # initialise datagenerator
     datagen = DataGenerator(
-        time_steps = cfg_data["time_steps"],
+        time_steps = cfg_data["time_steps"]["val"],
         jitter = cfg_data["jitter"],
-        neurons = cfg_data["neurons"],
+        neurons = cfg_data["neurons"]["val"],
         min_isi = cfg_data["min_isi"],
         max_isi = cfg_data["max_isi"],
         min_rate = cfg_data["min_rate"],
@@ -35,11 +35,14 @@ def main(
 
     # generate dataset
     dataset = datagen.generate_dataset(
-        no_samples = cfg_data["no_samples"]["val"],
+        no_samples = cfg_data["no_samples"],
         batch_size = cfg_data["batch_size"],
         shuffle = cfg_data["shuffle"],
         prefetch = cfg_data["prefetch"]
     )
+
+    model.forward(next(iter(dataset))[0])
+    print("Success!")
 
 def resolve_arguments():
     parser = argparse.ArgumentParser()
