@@ -76,6 +76,7 @@ class SynthModel(torch.nn.Module):
 
         self._record = record
         self._samples = config["samples"]
+        self._build = False
 
         # send to gpu
         self.to(device = self.device)
@@ -137,7 +138,7 @@ class SynthModel(torch.nn.Module):
     ) -> tuple[torch.Tensor]:
         
         if not self._build:
-            self.build_vaules(next(iter(data)))
+            self.build_vaules(next(iter(data))[0])
 
         # pre-define variables
         loss_hist = []
@@ -153,6 +154,7 @@ class SynthModel(torch.nn.Module):
             target = target.to(self.device)
 
             # make prediction
+            print("lessgoo")
             pred = self.forward(x)
 
             # loss and accuracy calculations
@@ -160,9 +162,14 @@ class SynthModel(torch.nn.Module):
             acc = self.acc(pred, target)
 
             # weight update
+            print("here")
             self.optim.zero_grad()
-            loss.backward(retain_graph = True)
+            print("now here")
+            # loss.backward(retain_graph = True)
+            loss.backward()
+            print("now here")
             self.optim.step()
+            print("not here")
 
             # TODO: record loss/accuracy during training
             # TODO: dump list regularly to file
@@ -186,7 +193,7 @@ class SynthModel(torch.nn.Module):
         
         # check if model has been build already 
         if not self._build:
-            self.build_vaules(next(iter(data)))
+            self.build_vaules(next(iter(data))[0])
             
         # pre-define variables
         loss_hist = []
@@ -355,13 +362,12 @@ class SynthModel(torch.nn.Module):
         cur3 = self.con3(spk2)
         spk3, mem3 = self.neuron3(cur3, mem3)
 
-        # record the shapes
-        self._layer1_shape = spk1.shape
-        self._layer2_shape = spk2.shape
-        self._layer3_shape = spk3.shape
-
         if self._record:
-            self._init_tensors__()
+            self._init_tensors__(
+                spk1.shape,
+                spk2.shape,
+                spk3.shape
+            )
 
         self._build = True
 
