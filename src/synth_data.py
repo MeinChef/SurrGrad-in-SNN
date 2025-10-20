@@ -209,7 +209,7 @@ class DataGenerator:
                 # which is saved from len(indices) to -1
                 # the +j is the offset from the start of each class.
                 samples[i * len(indices) + j] = sample
-            labels[i * len(indices) : (i + 1) * len(indices) - 1] = i
+            labels[i * len(indices) : (i + 1) * len(indices)] = i
 
         return samples, labels
 
@@ -228,7 +228,7 @@ class DataGenerator:
         # put them in a dataset with the correct dtype
         ds = torch.utils.data.TensorDataset(
             torch.from_numpy(data),
-            torch.from_numpy(labels.astype(self._precision))
+            torch.from_numpy(labels.astype(np.int64))
         )
 
         # and make a nice dataloader out of it
