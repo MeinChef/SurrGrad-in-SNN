@@ -236,6 +236,7 @@ class DataGenerator:
             dataset = ds,
             batch_size = batch_size,
             shuffle = shuffle,
+            drop_last = True,
             num_workers = workers,
             pin_memory = True,
             prefetch_factor = prefetch
