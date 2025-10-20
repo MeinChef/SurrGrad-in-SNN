@@ -87,17 +87,23 @@ class SynthModel(torch.nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor
+        x: torch.Tensor,
+        batch_first: bool = True
     ) -> torch.Tensor:
 
         mem1 = self.neuron1.reset_mem()
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
 
+        if batch_first:
+            # reshape to actually have the time_steps first again
+            # that makes the for loop later cleaner
+            x = x.permute(1, 0, -1)
+
         out = torch.empty(
             [
-                x.shape[0],
                 self._time_steps,
+                x.shape[1],
                 self._neurons_out
             ], 
             device = self.device
@@ -116,7 +122,6 @@ class SynthModel(torch.nn.Module):
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
-            breakpoint()
             out[step] = spk3
 
             if self._record:
@@ -322,7 +327,8 @@ class SynthModel(torch.nn.Module):
 
     def build_vaules(
         self,
-        x: torch.Tensor
+        x: torch.Tensor,
+        batch_first: bool = True
     ) -> None:
         """
         Function needs to be called before starting to train the model.
@@ -332,6 +338,10 @@ class SynthModel(torch.nn.Module):
         mem1 = self.neuron1.reset_mem()
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
+
+        if batch_first:
+            # reshape to actually have the time_steps first again
+            x = x.permute(1, 0, -1)
 
         # layer 1
         cur1 = self.con1(x[0])
