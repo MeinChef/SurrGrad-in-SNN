@@ -307,6 +307,7 @@ class DataHandler:
         [identifier]-ep[#epoch]-layer[#].npz and identifier has to be provided
         """
 
+        # Subject to Re-Write
         rec = []
         if infer_epochs:
             cont = os.listdir(make_path(self.path + "/rec/"))
@@ -419,6 +420,49 @@ class DataHandler:
                     )
 
         plt.tight_layout()
+        plt.show()
+
+    def plot_loss_accuracy(
+        self,
+        loss: list,
+        accuracy: list,
+        training: bool = False,
+        epoch: int = -1,
+        filename: str | None = None
+    ) -> None:
+        
+
+
+        fig, ax1 = plt.subplots()
+
+        # plot loss on the left y-axis
+        ax1.set_xlabel("Batches")
+        ax1.set_ylabel("Loss", color = "orange")
+        ax1.plot(
+            range(len(loss)), 
+            loss, 
+            color = "orange", 
+            label = "Loss"
+        )
+        ax1.tick_params(axis = "y", labelcolor = "orange")
+
+        # create a second y-axis for accuracy
+        ax2 = ax1.twinx()
+        ax2.set_ylabel("Accuracy", color = "blue")
+        ax2.plot(
+            range(len(loss)), 
+            accuracy, 
+            color = "blue", 
+            label = "Accuracy"
+        )
+        ax2.tick_params(axis = "y", labelcolor = "blue")
+
+        plt.title(f"Loss and Accuracy. Epoch {epoch}{' of Training' if training else ' of Testing'}")
+        fig.tight_layout()
+        if filename:
+            plt.savefig(
+                os.path.join(self.path, self.now + "_" + filename + ".png")
+            )
         plt.show()
 
         
