@@ -149,6 +149,10 @@ class SynthModel(torch.nn.Module):
 
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
+            # check if the training has been already done to the specified amount
+            if i == self._partial_test:
+                break
+
             # move tensors to device
             x = x.to(self.device)
             target = target.to(self.device)
@@ -175,9 +179,6 @@ class SynthModel(torch.nn.Module):
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
             acc_hist.append(acc)
-
-            if i == self._partial_train:
-                break
         
         torch.cuda.empty_cache()
         
@@ -217,6 +218,10 @@ class SynthModel(torch.nn.Module):
         # test loop
         with torch.no_grad():
             for i, (x, target) in tqdm.tqdm(enumerate(data)):
+                # check if the training has been already done to the specified amount
+                if i == self._partial_test:
+                    break
+
                 # move tensors to device
                 x = x.to(self.device)
                 target = target.to(self.device)
@@ -252,9 +257,6 @@ class SynthModel(torch.nn.Module):
                 # TODO: dump list regularly to file
                 loss_hist.append(loss.item())
                 acc_hist.append(acc)
-
-                if i == self._partial_test:
-                    break
             
         torch.cuda.empty_cache()
         
