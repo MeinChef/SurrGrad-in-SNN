@@ -4,7 +4,6 @@ from imports import warnings
 from imports import surrogate
 from imports import Callable
 from imports import torch
-from imports import tqdm
 from imports import re
 from imports import functional
 
@@ -127,90 +126,6 @@ def resolve_optim(config: dict, params) -> Callable:
         )
     else:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
-
-def resolve_encoding_map(config: dict) -> Callable:
-    
-    name = config["target"].lower()
-
-    if name == "rate":
-        return lambda x: x
-    elif name == "latency":
-        return lambda x: x
-    elif name == "latency_timing":
-        def transf(x):
-            '''
-            Function for generating on_target spikes, given a class label.
-            '''
-            torch.manual_seed(x)
-            return torch.randint(
-                # quickest timing can be at 0
-                low = 0,
-                # slowest at 300 (see get_shortest_observation function)
-                high = 300, 
-                # arbitrarily set size (thought 4 spikes seem nice)
-                size = (4,),
-                dtype = torch.float32
-            )
-        return transf
-    else:
-        raise NameError("The target encoding specified in config is unresolveable. Check source code and typos")
-
-
-
-def get_shortest_observation(
-        data: torch.utils.data.DataLoader
-) -> int:
-    '''
-    Function for getting the shortest observation in the dataset.
-    '''
-    shortest = 2**32
-    for x, y in tqdm.tqdm(data):
-        if x.shape[0] < shortest:
-            shortest = x.shape[0]
-    
-    return shortest # 307 in the whole dataset
-
-def get_longest_observation(
-        data: torch.utils.data.DataLoader = None
-) -> int:
-    '''
-    Function for getting the longest observation in the dataset.
-    '''
-    if data is None:
-        return 314
-    
-    longest = 0
-    for x, y in tqdm.tqdm(data):
-        if x.shape[0] > longest:
-            longest = x.shape[0]
-    
-    return longest # 314 in the whole dataset
-
-def get_sample_distribution(
-        data: torch.utils.data.DataLoader,
-        num_classes: int = 10
-) -> torch.Tensor:
-    '''
-    Function for getting the sample distribution in the dataset.
-    '''
-    amount = torch.zeros(num_classes, dtype = torch.int32)
-    for x, y in tqdm.tqdm(data):
-        amount += torch.bincount(y, minlength = 10)
-    return amount
-
-def get_sample_distribution_from_tonic(
-        data,
-        num_classes: int = 10
-) -> torch.Tensor:
-    '''
-    Function for getting the sample distribution in the dataset.
-    '''
-    amount = torch.zeros(num_classes, dtype = torch.int32)
-    for x, y in tqdm.tqdm(data):
-        amount[y] += 1
-
-    return amount
-
 
 def make_path(path: str) -> os.PathLike:
     '''
