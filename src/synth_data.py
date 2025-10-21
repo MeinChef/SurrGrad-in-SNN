@@ -218,10 +218,14 @@ class DataGenerator:
         no_samples: int = 3000,
         batch_size: int = 256,
         shuffle: bool = True,
+        train_split: float = 0.8,
         prefetch: int = 16,
         workers: int = max(2, os.cpu_count() - 4)
-
     ) -> torch.utils.data.DataLoader:
+        
+        if train_split > 1:
+            raise ValueError(f"train_split is too large. Can be at most 1. Actual: {train_split}")
+
         # generate the samples
         data, labels = self.generate_samples(no_samples = no_samples)
         
@@ -241,6 +245,13 @@ class DataGenerator:
             pin_memory = True,
             prefetch_factor = prefetch
         )
+
+        # split the dataset if specified
+        if train_split > 0:
+            loader = torch.utils.data.random_split(
+                loader,
+                [train_split, 1 - train_split]
+            )
 
         return loader
 
