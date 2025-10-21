@@ -3,7 +3,6 @@ from imports import math
 from imports import os
 from imports import torch
 from imports import plt
-# from imports import timeit
 
 DEBUG = False
 
@@ -292,38 +291,3 @@ def vis(
     plt.xlabel("Time step")
     plt.ylabel("Neuron")
     plt.title("Label: " + str(label))
-
-
-
-# if __name__ == "__main__":
-
-#     gen = DataGenerator(
-#         time_steps = 1000,
-#         # jitter = 0.3,
-#         min_isi = 1,
-#         max_isi = 10,
-#         min_rate = 5,
-#         max_rate = 20,
-#     )
-
-#     data, label = gen.generate_samples(no_samples = 2)
-#     vis(data[0], label[0])
-#     # vis(data[100], label[100])
-#     # vis(data[-1], label[-1])
-#     plt.show()
-
-#     gen.jitter = 0.3
-#     data, label = gen.generate_samples(no_samples = 2)
-#     vis(data[0], label[0])
-#     plt.show()
-#     exit(0)
-
-
-#     # print("Starting Benchmark...")
-#     # TODO: benchmark
-#     # print(timeit.timeit(
-#     #     gen.generate_samples,
-#     #     number = 100
-#     # ))
-#     # 3.1s with choice
-#     # 1.66s with shuffle

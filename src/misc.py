@@ -146,28 +146,3 @@ def make_path(path: str) -> os.PathLike:
         path_lst.extend(part)
     path = os.path.join(*path_lst)
     return path
-
-def cleanup(config: dict) -> None:
-    '''
-    Function for cleaning up DiskCachedDataset files. 
-    Since they caused weird happenings to the targets, it is better to delete them.
-
-    :param config: config dictionary
-    :type config: dict
-    '''
-
-    to_clean = make_path(config["cache_path"])
- 
-    print(f"Cleaning up {to_clean}...")
-
-    if os.path.exists(to_clean):
-        try:
-            shutil.rmtree(to_clean)
-        except OSError as e:
-            print(f"Error: {e.strerror}. Could not delete {to_clean}.")
-    else:
-        print(f"Path {to_clean} does not exist. Nothing to clean up.")
-
-    print("Done.")
-    
-    return
