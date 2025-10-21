@@ -45,6 +45,7 @@ class DataGenerator:
         self.classes = class_assignment.flatten()
 
         self.rng = np.random.default_rng()
+        self.torch_rng = torch.default_generator
 
     def _class_assign_matrix(
             self, 
@@ -235,23 +236,46 @@ class DataGenerator:
             torch.from_numpy(labels.astype(np.int64))
         )
 
-        # and make a nice dataloader out of it
-        loader = torch.utils.data.DataLoader(
-            dataset = ds,
-            batch_size = batch_size,
-            shuffle = shuffle,
-            drop_last = True,
-            num_workers = workers,
-            pin_memory = True,
-            prefetch_factor = prefetch
-        )
-
-        # split the dataset if specified
-        if train_split > 0:
-            loader = torch.utils.data.random_split(
-                loader,
-                [train_split, 1 - train_split]
+        if train_split == 0:
+            # and make a nice dataloader out of it
+            loader = torch.utils.data.DataLoader(
+                dataset = ds,
+                batch_size = batch_size,
+                shuffle = shuffle,
+                drop_last = True,
+                num_workers = workers,
+                pin_memory = True,
+                prefetch_factor = prefetch
             )
+        else:
+            # split the dataset if specified
+            train, test = torch.utils.data.random_split(
+                ds,
+                [train_split, 1 - train_split],
+                self.torch_rng
+            )
+
+            # and again Dataloader
+            train_loader = torch.utils.data.DataLoader(
+                dataset = train,
+                batch_size = batch_size,
+                shuffle = shuffle,
+                drop_last = True,
+                num_workers = workers,
+                pin_memory = True,
+                prefetch_factor = prefetch
+            )
+            test_loader = torch.utils.data.DataLoader(
+                dataset = test,
+                batch_size = batch_size,
+                shuffle = shuffle,
+                drop_last = True,
+                num_workers = workers,
+                pin_memory = True,
+                prefetch_factor = prefetch
+            )
+            loader = (train_loader, test_loader)
+
 
         return loader
 
