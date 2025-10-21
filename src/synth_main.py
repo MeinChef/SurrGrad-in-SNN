@@ -28,21 +28,42 @@ def main(
     )
 
     # initialise Datahandler
-    if args.record_hidden:
-        handler = DataHandler(
-            path = args.data_path
-        )
-
-    # generate dataset
-    dataset = datagen.generate_dataset(
-        no_samples = cfg_data["no_samples"],
-        batch_size = cfg_data["batch_size"],
-        shuffle = cfg_data["shuffle"],
-        prefetch = cfg_data["prefetch"]
+    handler = DataHandler(
+        path = args.data_path
     )
 
-    model.forward(next(iter(dataset))[0])
-    print("Success!")
+    # generate dataset
+    train, test = datagen.generate_dataset(
+        no_samples = cfg_data["no_samples"],
+        batch_size = cfg_data["batch_size"],
+        train_split = cfg_data["train_split"],
+        shuffle = cfg_data["shuffle"],
+        prefetch = cfg_data["prefetch"],
+    )
+
+    for e in range(cfg_model["epochs"]):
+        loss, acc = model.fit(train)
+
+        loss, acc, rec = model.evaluate(
+            data = test,
+            record_per_class = True
+        )
+        
+        handler.plot_loss_accuracy(
+            loss = loss,
+            accuracy = acc,
+            training = False,
+            epoch = e,
+            filename = f"test-epoch{e}"
+        )
+
+        # TODO: spk_rec_to_file needs to be able to
+        # get dicts with classes.
+        # handler.spk_rec_to_file(
+        #     rec
+        # )
+        print("Success!")
+    
 
 def resolve_arguments():
     parser = argparse.ArgumentParser()
