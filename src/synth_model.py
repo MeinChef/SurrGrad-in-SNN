@@ -158,7 +158,6 @@ class SynthModel(torch.nn.Module):
             target = target.to(self.device)
 
             # make prediction
-            print("lessgoo")
             pred = self.forward(x)
 
             # loss and accuracy calculations
@@ -166,14 +165,10 @@ class SynthModel(torch.nn.Module):
             acc = self.acc(pred, target)
 
             # weight update
-            print("here")
             self.optim.zero_grad()
-            print("now here")
             # loss.backward(retain_graph = True)
             loss.backward()
-            print("now here")
             self.optim.step()
-            print("not here")
 
             # TODO: record loss/accuracy during training
             # TODO: dump list regularly to file
@@ -228,11 +223,13 @@ class SynthModel(torch.nn.Module):
 
                 # make prediction
                 if self._record:
+                    pred = self.forward(x)
+
                     # create a mask for the hidden layer recordings
                     mask = self.create_mask(
                         target = target,
                         per_class = record_per_class
-                        )
+                    )
                     if torch.is_tensor(mask):
                         if record_per_class:
                             # write the recordings per class
@@ -267,9 +264,9 @@ class SynthModel(torch.nn.Module):
     ######################################
 
     def create_mask(
-            self,
-            target: torch.Tensor,
-            per_class: bool = True
+        self,
+        target: torch.Tensor,
+        per_class: bool = True
     ) -> torch.Tensor | bool:
 
         '''
@@ -287,7 +284,7 @@ class SynthModel(torch.nn.Module):
             raise ValueError(
                 "Something went wrong. Shapes of _counter and config['neurons_out'] do not match." + 
                 f"Actual:\n_counter: {self._counter.shape}\nneurons_out: {self._neurons_out}"
-                )
+            )
         
         if (self._counter < 0).any():
             raise ValueError(
@@ -376,10 +373,10 @@ class SynthModel(torch.nn.Module):
 
 
     def _init_tensors__(
-            self,
-            layer1_shape: tuple,
-            layer2_shape: tuple,
-            layer3_shape: tuple
+        self,
+        layer1_shape: tuple,
+        layer2_shape: tuple,
+        layer3_shape: tuple
     ) -> None:
         
         self.rec_spk1 = torch.zeros(
