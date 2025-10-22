@@ -1,7 +1,9 @@
-from imports import yaml
-from imports import numpy as np
 from imports import os
 from imports import datetime
+from imports import warnings
+from imports import numpy as np
+from imports import torch
+from imports import yaml
 from imports import plt
 from misc import make_path
 
@@ -10,9 +12,6 @@ from misc import make_path
 def load_config(path: str = "config.yml") -> tuple[dict, dict]:
     with open(path, "r") as file:
         configs = yaml.safe_load(file)
-
-    # set the default values for hidden variables
-    # configs["config_model"]["batch_size"] = configs["config_data"]["batch_size"]
 
     return configs["data"], configs["model"]
 
@@ -29,14 +28,14 @@ class DataHandler:
 
     def spk_rec_to_file(
         self,
-        data: list = None,
-        identifier: str = None,
+        data: dict = None,
+        identifier: str | list[str] = None,
     ) -> None:
         """
         Function for saving the spike recording of the hidden layers into a file on disk.
         
-        :param data: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-        :type data: list, required
+        :param data: Dictionary, with each key containing a list: [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
+        :type data: dict, required
         
         :param identifier: Useful for saving the data with a custom filename
         :type identifier: str or list[str], optional
@@ -56,19 +55,42 @@ class DataHandler:
         elif identifier is None:
             identifier = [self.now + "-layer1.npz", self.now + "-layer2.npz", self.now + "-layer3.npz"]
 
+        for key in data.keys():
+            for i, layer in enumerate(data[key]):
+                # try concatenating the layers along batch dimension
+                try:
+                    array = torch.cat(*layer, dim = 1)
+                    if array.get_device() >= 0:
+                        array = array.cpu()
+                    array = array.numpy().astype(np.int8)
 
-        for i, layer in enumerate(data):
-            for j, rec in enumerate(layer):
+                # if that didn't work, save each recording individually
+                except Exception as e:
+                    # warn that it didn't happen as expected
+                    warnings.warn(
+                        "Failed saving the recordings as single Tensor. " +
+                        "Proceeding with saving the recordings individually.\n" +
+                        f"Actual Exception: {e}"
+                    )
 
-                # if recording is in GPU memory
-                if rec.get_device() >= 0:
-                    rec = rec.cpu().numpy()
-                    layer[j] = rec.astype(np.int8) # we shouldn"t loose any expressiveness, since spikes are usually 0s or 1s
-                # or it"s on cpu
-                elif rec.get_device() == -1:
-                    layer[j] = rec.numpy().astype(np.int8)
-                
-            np.savez_compressed(os.path.join(path, identifier[i]), *layer)
+                    for j, rec in enumerate(layer):
+
+                        # if recording is in GPU memory
+                        if rec.get_device() >= 0:
+                            rec = rec.cpu().numpy()
+                            # we shouldn"t loose any expressiveness, since spikes are usually 0s or 1s
+                            layer[j] = rec.astype(np.int8) 
+                        # or it"s on cpu
+                        elif rec.get_device() == -1:
+                            layer[j] = rec.numpy().astype(np.int8)
+                    
+                np.savez_compressed(
+                    os.path.join(
+                        path, 
+                        key + identifier[i]
+                    ),
+                    array
+                )
 
     def load_spk_rec(
         self,
@@ -124,7 +146,7 @@ class DataHandler:
         self,
         loss: list, 
         acc: list = None, 
-        spk_rec: list[list,list,list] = None,
+        spk_rec: dict[list[list,list,list]] = None,
         identifier: str = None
     ) -> None:
         """
@@ -140,7 +162,7 @@ class DataHandler:
         :type acc: list
 
         :param spk_rec: spk_rec of all layers 
-        :type spk_rec: list, optional
+        :type spk_rec: dict, optional
         """
 
         if len(loss) != 0:
@@ -309,7 +331,8 @@ class DataHandler:
         accuracy: list,
         training: bool = False,
         epoch: int = -1,
-        filename: str | None = None
+        filename: str | None = None,
+        show: bool = False
     ) -> None:
         
 
@@ -344,7 +367,8 @@ class DataHandler:
             plt.savefig(
                 os.path.join(self.path, self.now + "_" + filename + ".png")
             )
-        plt.show()
+        if show:
+            plt.show()
 
         
 def pad_along_axis(
