@@ -150,7 +150,7 @@ class SynthModel(torch.nn.Module):
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
             # check if the training has been already done to the specified amount
-            if i == self._partial_test:
+            if i == self._partial_train:
                 break
 
             # move tensors to device
@@ -345,6 +345,8 @@ class SynthModel(torch.nn.Module):
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
 
+        x = x.to(self.device)
+
         if batch_first:
             # reshape to actually have the time_steps first again
             x = x.permute(1, 0, -1)
@@ -385,7 +387,7 @@ class SynthModel(torch.nn.Module):
                 *layer1_shape
             ],
             dtype = torch.float32,
-            device = "cpu",
+            device = self.device,
             requires_grad = False
         )
 
@@ -395,7 +397,7 @@ class SynthModel(torch.nn.Module):
                 *layer2_shape
             ],
             dtype = torch.float32,
-            device = "cpu",
+            device = self.device,
             requires_grad = False
         )
 
@@ -405,7 +407,7 @@ class SynthModel(torch.nn.Module):
                 *layer3_shape
             ],
             dtype = torch.float32,
-            device = "cpu",
+            device = self.device,
             requires_grad = False
         )
 
@@ -413,5 +415,5 @@ class SynthModel(torch.nn.Module):
             size = (self._neurons_out,),
             fill_value = self._samples,
             dtype = torch.int32,
-            device = torch.device("cpu")
+            device = self.device
         )

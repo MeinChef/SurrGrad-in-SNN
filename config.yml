@@ -3,15 +3,16 @@ data:
     val: 10
   time_steps: &time_steps 
     val: 1000
-  no_samples: 3000
+  no_samples: 10000
   jitter: 0.0
   min_isi: 1
   max_isi: 10
   min_rate: 5
   max_rate: 20
 
-  batch_size: 256
+  batch_size: 128
   shuffle: True
+  train_split: 0.7
   prefetch: 16
 
 model:
