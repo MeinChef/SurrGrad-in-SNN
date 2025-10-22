@@ -3,6 +3,7 @@ from imports import math
 from imports import os
 from imports import torch
 from imports import plt
+from imports import tqdm
 
 DEBUG = False
 
@@ -176,7 +177,7 @@ class DataGenerator:
                 size = samples_per_class,
                 replace = True
             )
-            for j, idx in enumerate(indices):
+            for j, idx in tqdm.tqdm(enumerate(indices)):
                 # generate sample with self.isis[idx] and self.rates[idx]
                 # this works, because all arrays got flattened
                 sample = self._generate_sample(

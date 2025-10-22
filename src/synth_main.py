@@ -10,6 +10,7 @@ def main(
     cfg_data, cfg_model = load_config()
 
     # initialise datagenerator
+    print("Initialising Classes...")
     datagen = DataGenerator(
         time_steps = cfg_data["time_steps"]["val"],
         jitter = cfg_data["jitter"],
@@ -31,8 +32,10 @@ def main(
     handler = DataHandler(
         path = args.data_path
     )
+    print("Done!")
 
     # generate dataset
+    print("Generating Data...")
     train, test = datagen.generate_dataset(
         no_samples = cfg_data["no_samples"],
         batch_size = cfg_data["batch_size"],
@@ -40,8 +43,11 @@ def main(
         shuffle = cfg_data["shuffle"],
         prefetch = cfg_data["prefetch"],
     )
+    print("Done!")
 
+    print("Training...")
     for e in range(cfg_model["epochs"]):
+        print(f"Epoch: {e}")
         loss, acc = model.fit(train)
 
         loss, acc, rec = model.evaluate(
@@ -54,15 +60,15 @@ def main(
             accuracy = acc,
             training = False,
             epoch = e,
-            filename = f"test-epoch{e}"
+            filename = f"test-epoch{e}",
+            show = False
         )
 
-        # TODO: spk_rec_to_file needs to be able to
-        # get dicts with classes.
-        # handler.spk_rec_to_file(
-        #     rec
-        # )
-        print("Success!")
+        # save the spike recordings cleanly to a file
+        handler.spk_rec_to_file(
+            rec
+        )
+    print("Success!")
     
 
 def resolve_arguments():
