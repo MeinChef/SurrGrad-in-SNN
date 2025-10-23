@@ -9,6 +9,17 @@ class SynthModel(torch.nn.Module):
         config: dict,
         record: bool | None = None
     ) -> None:
+
+        """
+        A model for learning the spike time and rate encoding of data.
+        Expects data to be presented in the form 
+
+        :param config: A dictionary with keys for setting up the SNN.
+        :type config: dict, required
+
+        :param record: Whether to record the hidden layers during testing. Can be bool or None. Default is None
+        :type record: bool | None, optional
+        """
         
         super().__init__()
 
@@ -26,6 +37,7 @@ class SynthModel(torch.nn.Module):
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
+        # layer 1
         self.con1 = torch.nn.Linear(
             in_features = config["features"]["val"],
             out_features = config["neurons_hidden_1"],
@@ -37,6 +49,7 @@ class SynthModel(torch.nn.Module):
             init_hidden = False
         )
 
+        # layer 2
         self.con2 = torch.nn.Linear(
             in_features = config["neurons_hidden_1"],
             out_features = config["neurons_hidden_2"],
@@ -48,6 +61,7 @@ class SynthModel(torch.nn.Module):
             init_hidden = False
         )
 
+        # layer 3 / output
         self.con3 = torch.nn.Linear(
             in_features = config["neurons_hidden_2"],
             out_features = config["neurons_out"],
@@ -68,6 +82,7 @@ class SynthModel(torch.nn.Module):
             params  = self.parameters()
         )
 
+        # save config to class
         self._time_steps = config["time_steps"]["val"]
         self._epochs = config["epochs"]
         self._partial_train = config["partial_training"]
@@ -92,6 +107,17 @@ class SynthModel(torch.nn.Module):
         batch_first: bool = True
     ) -> torch.Tensor:
 
+        """
+        The forward function of the network. Passes a single batch through the network. 
+
+        :param x: Data to pass through the network.
+        :type x: Tensor, required
+
+        :param batch_first: Whether the first dimension of the input tensor is the batch dimension (True) or time steps (False).
+        :type batch_first: bool, optional
+        """
+
+        # setup
         mem1 = self.neuron1.reset_mem()
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
@@ -101,6 +127,7 @@ class SynthModel(torch.nn.Module):
             # that makes the for loop later cleaner
             x = x.permute(1, 0, -1)
 
+        # pre-allocate the output-tensor
         out = torch.empty(
             [
                 self._time_steps,
@@ -130,12 +157,25 @@ class SynthModel(torch.nn.Module):
                 self.rec_spk2[step] = spk2
                 self.rec_spk3[step] = spk3
 
+        # undo permutation if batch_first
+        if batch_first:
+            out = out.permute(1, 0, -1)
+
+
         return out
 
     def fit(
         self,
         data: torch.utils.data.DataLoader
     ) -> tuple[torch.Tensor]:
+        
+        """
+        Function for fitting (training) the network. 
+        The Dataloader should contain the data and the labels.
+
+        :param data: Dataloader. Should contain a tuple with (data, label).
+        :type data: torch DataLoader, required
+        """
         
         if not self._build:
             self.build_vaules(next(iter(data))[0])
