@@ -115,6 +115,9 @@ class SynthModel(torch.nn.Module):
 
         :param batch_first: Whether the first dimension of the input tensor is the batch dimension (True) or time steps (False).
         :type batch_first: bool, optional
+
+        :return: Output of the last layer
+        :rtype: Tensor
         """
 
         # setup
@@ -167,7 +170,7 @@ class SynthModel(torch.nn.Module):
     def fit(
         self,
         data: torch.utils.data.DataLoader
-    ) -> tuple[torch.Tensor]:
+    ) -> tuple[list, list]:
         
         """
         Function for fitting (training) the network. 
@@ -175,8 +178,12 @@ class SynthModel(torch.nn.Module):
 
         :param data: Dataloader. Should contain a tuple with (data, label).
         :type data: torch DataLoader, required
+
+        :return: Lists containing the accuracy and loss during the training
+        :rtype: tuple[list, list]
         """
         
+        # check if model has been build already
         if not self._build:
             self.build_vaules(next(iter(data))[0])
 
@@ -210,7 +217,6 @@ class SynthModel(torch.nn.Module):
             loss.backward()
             self.optim.step()
 
-            # TODO: record loss/accuracy during training
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
             acc_hist.append(acc)
@@ -225,7 +231,19 @@ class SynthModel(torch.nn.Module):
         data: torch.utils.data.DataLoader,
         record_per_class: bool = False
     ) -> tuple[list, list, dict | None]:
-        
+        """
+        Function for evaluating (testing) the network. 
+        The Dataloader should contain the data and the labels.
+
+        :param data: Dataloader. Should contain a tuple with (data, label).
+        :type data: torch DataLoader, required
+
+        :return: Lists with accuracy and lost during evaluation.\n
+                If hidden layers are recorded, also return a dictionary with the recordings.\n
+                If record_per_class is true, the dictionary contains more than one key.
+                If record_per_class is false, the dictionary only contains the key 'class_0'
+        :rtype: tuple[list, list, dict | None]
+        """
         
         # check if model has been build already 
         if not self._build:
@@ -310,11 +328,13 @@ class SynthModel(torch.nn.Module):
     ) -> torch.Tensor | bool:
 
         '''
-        Function to create a mask for the hidden layer recordings. Returns mask if there is still something to be recorded.
-        Otherwise returns False.
+        Function to create a mask for the hidden layer recordings. 
+        Returns mask if there is still something to be recorded.
+        If the mask would mask the whole input, False is being returned instead.
 
         :param target: tensor - the target labels for the minibatch
         :type target: torch.Tensor, required
+
         :return: mask - a boolean mask for the hidden layer recordings or False if there is no value in this batch to be recorded
         :rtype: torch.Tensor | bool
         '''
@@ -335,7 +355,6 @@ class SynthModel(torch.nn.Module):
         # all classes have been recorded the specified amount of times
         # no need to create a mask
         if (self._counter == 0).all():
-            
             return False
         
         # pre-allocate the mask
@@ -344,6 +363,7 @@ class SynthModel(torch.nn.Module):
             dtype = torch.bool, 
             device = target.device
         )
+        # duplicate the mask for all classes
         mask = mask.unsqueeze(0).repeat(self._counter.shape[0], 1)
 
         # loop over every class and save if it is contained in the target tensor
@@ -379,6 +399,15 @@ class SynthModel(torch.nn.Module):
         """
         Function needs to be called before starting to train the model.
         It sets and infers values needed for training.
+
+        :param x: A batch, as it would be usually passed through the network
+        :type x: Tensor
+
+        :param batch_first: Whether the first dimension is batch_size (True) or time_steps (False). Default True
+        :type batch_first: bool, optional
+
+        :returns:
+        :rtype: None
         """
 
         mem1 = self.neuron1.reset_mem()
@@ -420,6 +449,16 @@ class SynthModel(torch.nn.Module):
         layer2_shape: tuple,
         layer3_shape: tuple
     ) -> None:
+        
+        """
+        Function that allocates the Tensors used during the recording of the hidden layers.
+
+        :param layerX_shape: Tuple that defines the output shapes of layer X
+        :type layerX_shape: Tuple
+
+        :returns:
+        :rtype: None
+        """
         
         self.rec_spk1 = torch.zeros(
             [
