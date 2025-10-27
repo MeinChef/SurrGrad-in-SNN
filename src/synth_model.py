@@ -160,10 +160,6 @@ class SynthModel(torch.nn.Module):
                 self.rec_spk2[step] = spk2
                 self.rec_spk3[step] = spk3
 
-        # undo permutation if batch_first
-        if batch_first:
-            out = out.permute(1, 0, -1)
-
 
         return out
 
