@@ -1,5 +1,4 @@
 from imports import os
-from imports import shutil
 from imports import warnings
 from imports import surrogate
 from imports import Callable
