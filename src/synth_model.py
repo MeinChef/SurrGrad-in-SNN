@@ -2,6 +2,7 @@ from imports import torch
 from imports import snntorch as snn
 from imports import tqdm
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
+from grad import sigmoid
 
 DEBUG = False
 
@@ -34,7 +35,8 @@ class SynthModel(torch.nn.Module):
             self.device = torch.device("cpu")
 
         # resolve gradient
-        surrogate = resolve_gradient(config = config["surrogate"])
+        # surrogate = resolve_gradient(config = config["surrogate"])
+        surrogate = sigmoid(5)
 
         ###########################
         ### DEFINITION OF MODEL ###
@@ -364,12 +366,12 @@ class SynthModel(torch.nn.Module):
                                 # separate the recordings to the individual layers
                                 rec_dict[f"class_{cls}"][0].append(self.rec_spk1[:, mask[cls]].detach().clone().cpu())
                                 rec_dict[f"class_{cls}"][1].append(self.rec_spk2[:, mask[cls]].detach().clone().cpu())
-                                rec_dict[f"class_{cls}"][2].append(self.rec_spk3[:, mask[cls]].detach().clone().cpu())
+                                # rec_dict[f"class_{cls}"][2].append(self.rec_spk3[:, mask[cls]].detach().clone().cpu())
                         else:
                             # and no distinction between classes
                             rec_dict["class_0"][0].append(self.rec_spk1[:, mask].detach().clone().cpu())
                             rec_dict["class_0"][1].append(self.rec_spk2[:, mask].detach().clone().cpu())
-                            rec_dict["class_0"][2].append(self.rec_spk3[:, mask].detach().clone().cpu())
+                            # rec_dict["class_0"][2].append(self.rec_spk3[:, mask].detach().clone().cpu())
                 else:
                     pred = self.forward(x)
 
