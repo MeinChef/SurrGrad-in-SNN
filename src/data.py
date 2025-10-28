@@ -57,12 +57,24 @@ class DataHandler:
 
         for key in data.keys():
             for i, layer in enumerate(data[key]):
+                # check if there are even any recordings left to save
+                if not layer:
+                    continue
+
                 # try concatenating the layers along batch dimension
                 try:
-                    array = torch.cat(*layer, dim = 1)
+                    array = torch.cat(layer, dim = 1)
                     if array.get_device() >= 0:
                         array = array.cpu()
                     array = array.numpy().astype(np.int8)
+
+                    np.save(
+                        os.path.join(
+                            path, 
+                            key + "_" + identifier[i]
+                        ),
+                        array
+                    )
 
                 # if that didn't work, save each recording individually
                 except Exception as e:
@@ -80,17 +92,17 @@ class DataHandler:
                             rec = rec.cpu().numpy()
                             # we shouldn"t loose any expressiveness, since spikes are usually 0s or 1s
                             layer[j] = rec.astype(np.int8) 
-                        # or it"s on cpu
+                        # or it's on cpu
                         elif rec.get_device() == -1:
                             layer[j] = rec.numpy().astype(np.int8)
                     
-                np.savez_compressed(
-                    os.path.join(
-                        path, 
-                        key + identifier[i]
-                    ),
-                    array
-                )
+                    np.savez_compressed(
+                        os.path.join(
+                            path,
+                            key + identifier[i]
+                        ),
+                        layer
+                    )
 
     def load_spk_rec(
         self,
@@ -144,16 +156,15 @@ class DataHandler:
 
     def flush_to_file(
         self,
-        loss: list, 
+        loss: list,
+        loss_ident: str | None = None,
         acc: list = None, 
+        acc_ident: str | None = None,
         spk_rec: dict[list[list,list,list]] = None,
-        identifier: str = None
+        spk_ident: str = None
     ) -> None:
         """
         Saves the output from the model to a file, human-readable.
-
-        :param config: config dictionary
-        :type config: dict
         
         :param loss: list of loss values
         :type loss: list
@@ -168,9 +179,9 @@ class DataHandler:
         if len(loss) != 0:
             try:
                 np.savetxt(
-                    make_path(self.path + "/loss.txt"),
+                    make_path(self.path + f"/loss_{loss_ident}.txt"),
                     loss,
-                    fmt="%.8f"
+                    fmt = "%.8f"
                 )
             except Exception as e:
                 print(f"An error occurred: {e}")
@@ -179,9 +190,9 @@ class DataHandler:
             try:
                 if len(acc) != 0:
                     np.savetxt(
-                        make_path(self.path + "/acc.txt"),
+                        make_path(self.path + f"/acc_{acc_ident}.txt"),
                         acc,
-                        fmt="%.8f"
+                        fmt = "%.8f"
                     )
             except Exception as e:
                 print(f"An error occurred: {e}")
@@ -191,7 +202,7 @@ class DataHandler:
             try:
                 self.spk_rec_to_file(
                     data = spk_rec,
-                    identifier = identifier,
+                    identifier = spk_ident,
                 )
             except Exception as e:
                 print(f"An error occurred: {e}")
