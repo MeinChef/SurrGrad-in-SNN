@@ -3,6 +3,8 @@ from imports import snntorch as snn
 from imports import tqdm
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
+DEBUG = False
+
 class SynthModel(torch.nn.Module):
     def __init__(
         self,
@@ -44,34 +46,37 @@ class SynthModel(torch.nn.Module):
             device = self.device
         )
         self.neuron1 = snn.Leaky(
-            beta = config["neuron_beta"], 
+            beta = config["neuron_beta"],
+            threshold = config["neuron_threshold"],
             spike_grad = surrogate, 
             init_hidden = False
         )
 
-        # layer 2
+        # # layer 2
         self.con2 = torch.nn.Linear(
             in_features = config["neurons_hidden_1"],
-            out_features = config["neurons_hidden_2"],
+            out_features = config["neurons_out"],
             device = self.device
         )
         self.neuron2 = snn.Leaky(
-            beta = config["neuron_beta"], 
+            beta = config["neuron_beta"],
+            threshold = config["neuron_threshold"],
             spike_grad = surrogate,
             init_hidden = False
         )
 
         # layer 3 / output
-        self.con3 = torch.nn.Linear(
-            in_features = config["neurons_hidden_2"],
-            out_features = config["neurons_out"],
-            device = self.device
-        )
-        self.neuron3 = snn.Leaky(
-            beta = config["neuron_beta"], 
-            spike_grad = surrogate,
-            init_hidden = False
-        )
+        # self.con3 = torch.nn.Linear(
+        #     in_features = config["neurons_hidden_2"],
+        #     out_features = config["neurons_out"],
+        #     device = self.device
+        # )
+        # self.neuron3 = snn.Leaky(
+        #     beta = config["neuron_beta"],
+        #     threshold = config["neuron_threshold"],
+        #     spike_grad = surrogate,
+        #     init_hidden = False
+        # )
 
 
         # resolve additional bits
@@ -122,8 +127,8 @@ class SynthModel(torch.nn.Module):
 
         # setup
         mem1 = self.neuron1.reset_mem()
-        mem2 = self.neuron2.reset_mem()
-        mem3 = self.neuron3.reset_mem()
+        mem_last = self.neuron2.reset_mem()
+        # mem3 = self.neuron3.reset_mem()
 
         if batch_first:
             # reshape to actually have the time_steps first again
@@ -131,7 +136,7 @@ class SynthModel(torch.nn.Module):
             x = x.permute(1, 0, -1)
 
         # pre-allocate the output-tensor
-        out = torch.empty(
+        out = torch.zeros(
             [
                 self._time_steps,
                 x.shape[1],
@@ -147,19 +152,31 @@ class SynthModel(torch.nn.Module):
 
             # layer 2
             cur2 = self.con2(spk1)
-            spk2, mem2 = self.neuron2(cur2, mem2)
+            # spk2, mem2 = self.neuron2(cur2, mem2)
 
             # layer 3
-            cur3 = self.con3(spk2)
-            spk3, mem3 = self.neuron3(cur3, mem3)
+            # cur3 = self.con3(spk2)
+            # spk3, mem3 = self.neuron3(cur3, mem3)
+            spk_last, mem_last = self.neuron2(cur2, mem_last)
 
-            out[step] = spk3
+
+             # Store output - check what we're actually storing
+            if DEBUG and step == 0:
+                print(f"DEBUG step {step}: spk3 range [{spk_last.min():.3f}, {spk_last.max():.3f}]")
+                print(f"DEBUG step {step}: mem3 range [{mem_last.min():.3f}, {mem_last.max():.3f}]")
+
+
+            out[step] = spk_last
 
             if self._record:
                 self.rec_spk1[step] = spk1
-                self.rec_spk2[step] = spk2
-                self.rec_spk3[step] = spk3
+                # self.rec_spk2[step] = spk2
+                self.rec_spk2[step] = spk_last
 
+        if DEBUG:
+            print(f"Final output shape: {out.shape}")
+            print(f"Output range: [{out.min():.3f}, {out.max():.3f}]")
+    
 
         return out
 
@@ -191,7 +208,9 @@ class SynthModel(torch.nn.Module):
         self.train()
 
         # training loop
-        for i, (x, target) in tqdm.tqdm(enumerate(data)):
+        # for i, (x, target) in tqdm.tqdm(enumerate(data)):
+        for i, (x, target) in enumerate(data):
+
             # check if the training has been already done to the specified amount
             if i == self._partial_train:
                 break
@@ -203,15 +222,69 @@ class SynthModel(torch.nn.Module):
             # make prediction
             pred = self.forward(x)
 
+            # basic finite checks (loss may be finite while grads NaN)
+            if not torch.isfinite(pred).all():
+                print(f"DEBUG: non-finite values in predictions at batch {i}: min/max/nans = {pred.min().item()}/{pred.max().item()}/{pred.isnan().any().item()}")
+
+
             # loss and accuracy calculations
+            if DEBUG:
+                print(f"Pred shape: {pred.shape}, Target shape: {target.shape}")
+                print(f"Pred sum: {pred.sum():.3f}, Target sum: {target.sum():.3f}")
+
             loss = self.lossfn(pred, target)
             acc = self.acc(pred, target)
+
+            if not torch.isfinite(loss):
+                print(f"DEBUG: non-finite loss at batch {i}: {loss}")
+                # break early to inspect
+                breakpoint()
+
+            if DEBUG:
+                # --- DEBUG: inspect grads and parameter changes ---
+                # take one parameter (first conv weight) snapshot
+                p0 = None
+                for p in self.parameters():
+                    p0 = p.detach().clone()
+                    break
 
             # weight update
             self.optim.zero_grad()
             # loss.backward(retain_graph = True)
-            loss.backward()
+            # loss.backward()
+            try:
+                loss.backward()
+            except RuntimeError as e:
+                # autograd anomaly should report the op; print helpful diagnostics
+                print(f"DEBUG: RuntimeError during backward at batch {i}: {e}")
+                # print a few tensor stats to help locate the issue
+                for name, tensor in [("x", x), ("pred", pred), ("target", target)]:
+                    print(f"DEBUG: {name} finite: {torch.isfinite(tensor).all().item()} has_nan: {tensor.isnan().any().item()} max: {tensor.max().item()} min: {tensor.min().item()}")
+                # also check params
+                for idx, p in enumerate(self.parameters()):
+                    if not torch.isfinite(p).all():
+                        print(f"DEBUG: param {idx} contains non-finite values")
+                raise
+
+            if DEBUG:
+                # print grad norm
+                total_grad_norm = 0.0
+                for p in self.parameters():
+                    if p.grad is not None:
+                        gnorm = p.grad.data.norm().item()
+                        total_grad_norm += gnorm**2
+                total_grad_norm = total_grad_norm**0.5
+                print(f"batch {i} loss={loss.item():.6f} grad_norm={total_grad_norm:.6e}")
+
             self.optim.step()
+
+            if DEBUG:
+                if p0 is not None:
+                    p1 = None
+                    for p in self.parameters():
+                        p1 = p.detach().clone()
+                        break
+                print("param change norm:", (p1 - p0).norm().item())
 
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
@@ -408,7 +481,7 @@ class SynthModel(torch.nn.Module):
 
         mem1 = self.neuron1.reset_mem()
         mem2 = self.neuron2.reset_mem()
-        mem3 = self.neuron3.reset_mem()
+        # mem3 = self.neuron3.reset_mem()
 
         x = x.to(self.device)
 
@@ -425,14 +498,14 @@ class SynthModel(torch.nn.Module):
         spk2, mem2 = self.neuron2(cur2, mem2)
 
         # layer 3
-        cur3 = self.con3(spk2)
-        spk3, mem3 = self.neuron3(cur3, mem3)
+        # cur3 = self.con3(spk2)
+        # spk3, mem3 = self.neuron3(cur3, mem3)
 
         if self._record:
             self._init_tensors__(
                 spk1.shape,
                 spk2.shape,
-                spk3.shape
+                # spk3.shape
             )
 
         self._build = True
@@ -441,50 +514,52 @@ class SynthModel(torch.nn.Module):
 
     def _init_tensors__(
         self,
-        layer1_shape: tuple,
-        layer2_shape: tuple,
-        layer3_shape: tuple
+        layer1_shape: tuple | None = None,
+        layer2_shape: tuple | None = None,
+        layer3_shape: tuple | None = None
     ) -> None:
         
         """
         Function that allocates the Tensors used during the recording of the hidden layers.
 
-        :param layerX_shape: Tuple that defines the output shapes of layer X
-        :type layerX_shape: Tuple
+        :param layerX_shape: Tuple that defines the output shapes of layer X, defaults to None.
+        :type layerX_shape: Tuple | None
 
         :returns:
         :rtype: None
         """
-        
-        self.rec_spk1 = torch.zeros(
-            [
-                self._time_steps,
-                *layer1_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
+        if layer1_shape:
+            self.rec_spk1 = torch.zeros(
+                [
+                    self._time_steps,
+                    *layer1_shape
+                ],
+                dtype = torch.float32,
+                device = self.device,
+                requires_grad = False
+            )
 
-        self.rec_spk2 = torch.zeros(
-            [
-                self._time_steps,
-                *layer2_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
+        if layer2_shape:
+            self.rec_spk2 = torch.zeros(
+                [
+                    self._time_steps,
+                    *layer2_shape
+                ],
+                dtype = torch.float32,
+                device = self.device,
+                requires_grad = False
+            )
 
-        self.rec_spk3 = torch.zeros(
-            [
-                self._time_steps,
-                *layer3_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
+        if layer3_shape:
+            self.rec_spk3 = torch.zeros(
+                [
+                    self._time_steps,
+                    *layer3_shape
+                ],
+                dtype = torch.float32,
+                device = self.device,
+                requires_grad = False
+            )
 
         self._counter = torch.full(
             size = (self._neurons_out,),

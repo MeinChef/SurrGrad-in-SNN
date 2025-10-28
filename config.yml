@@ -17,10 +17,11 @@ data:
 
 model:
   features: *neurons
-  neurons_hidden_1: 1024
+  neurons_hidden_1: 128
   neurons_hidden_2: 512
   neurons_out: 2
   neuron_beta: 0.8
+  neuron_threshold: 0.8
   time_steps: *time_steps
 
   # hyperparameters
@@ -44,7 +45,7 @@ model:
   optimiser:
     # available optimisers: adam
     type: "adam" 
-    learning_rate: 0.03
+    learning_rate: 0.005
     betas: [0.9, 0.99]
 
   surrogate:
@@ -59,14 +60,14 @@ model:
     type: "sigmoid"
     alpha: null
     beta: null
-    slope: 25
+    slope: 5
     threshold: null
 
   # training parameters
-  epochs: 5
+  epochs: 3
   # partial training/testing in minibatches
-  partial_training: 50
-  partial_testing: 10
+  partial_training: -1
+  partial_testing: -1
 
   # record hidden layers?
   samples: 10
