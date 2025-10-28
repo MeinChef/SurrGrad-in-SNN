@@ -50,11 +50,28 @@ def main(
         print(f"Epoch: {e}")
         loss, acc = model.fit(train)
 
+        handler.flush_to_file(
+            loss = loss,
+            loss_ident = f"train-{e}",
+            acc = acc,
+            acc_ident = f"train-{e}"
+        )
+
         loss, acc, rec = model.evaluate(
             data = test,
             record_per_class = True
         )
-        
+
+        # save the spike recordings cleanly to a file
+        handler.flush_to_file(
+            loss = loss,
+            loss_ident = f"test-{e}",
+            acc = acc,
+            acc_ident = f"test-{e}",
+            spk_rec = rec,
+            spk_ident = None
+        )
+
         handler.plot_loss_accuracy(
             loss = loss,
             accuracy = acc,
@@ -62,11 +79,6 @@ def main(
             epoch = e,
             filename = f"test-epoch{e}",
             show = False
-        )
-
-        # save the spike recordings cleanly to a file
-        handler.spk_rec_to_file(
-            rec
         )
     print("Success!")
     
