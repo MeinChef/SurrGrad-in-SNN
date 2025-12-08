@@ -72,6 +72,7 @@ def main(
             spk_ident = None
         )
 
+        # plot the spikes and loss/accuracy
         handler.plot_loss_accuracy(
             loss = loss,
             accuracy = acc,
@@ -80,6 +81,19 @@ def main(
             filename = f"test-epoch{e}",
             show = False
         )
+
+        if rec is not None:
+            handler.plot_spikes(
+                recording = rec,
+                epoch = e,
+                filename = f"spk-test-epoch{e}",
+                show = True
+            )
+
+            # save the spike recordings cleanly to a file
+            handler.spk_rec_to_file(
+                rec
+            )
     print("Success!")
     
 
