@@ -31,11 +31,14 @@ model:
       # ce_rate: [arg: none]
       # mse_temporal: [arg: tolerance]
       # mse_rate: [arg: correct_rate, incorrect_rate]
-    type: "ce_temporal"
+      # mse_membrane: [arg: on_target, off_target]
+    type: "mse_membrane"
     correct_rate: null
-    inverse: "reciprocal"
+    inverse: "reciprocal" # either reciprocal or negate, default: negate
     incorrect_rate: null
-    tolerance: null
+    tolerance: 500
+    off_target: 0
+    on_target: 1
 
   accuracy:
     # available accuracies: rate, temporal

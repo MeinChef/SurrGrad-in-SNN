@@ -4,6 +4,8 @@ from data import load_config, DataHandler
 from misc import check_working_directory
 from imports import argparse
 
+from imports import plt
+
 def main(
     args: argparse.Namespace
 ):
@@ -46,15 +48,18 @@ def main(
     print("Done!")
 
     print("Training...")
+    loss_hist = []
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
         loss, acc = model.fit(train)
 
-        handler.flush_to_file(
+        handler.plot_loss_accuracy(
             loss = loss,
-            loss_ident = f"train-{e}",
-            acc = acc,
-            acc_ident = f"train-{e}"
+            accuracy = acc,
+            training = True,
+            epoch = e,
+            filename = f"train-epoch{e}",
+            show = False
         )
 
         loss, acc, rec = model.evaluate(
@@ -95,6 +100,7 @@ def main(
                 rec
             )
     print("Success!")
+    return True
     
 
 def resolve_arguments():
