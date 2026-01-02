@@ -271,7 +271,7 @@ class SynthModel(torch.nn.Module):
             # weight update
             self.optim.zero_grad()
             # loss.backward(retain_graph = True)
-            # loss.backward()
+            loss.backward()
             # try:
             #     loss.backward()
             # except RuntimeError as e:
@@ -286,7 +286,7 @@ class SynthModel(torch.nn.Module):
             #             print(f"DEBUG: param {idx} contains non-finite values")
             #     raise
 
-            loss_val_mem.backward()
+            # loss_val_mem.backward()
 
             if DEBUG:
                 # print grad norm
