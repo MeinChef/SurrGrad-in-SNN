@@ -4,8 +4,6 @@ from data import load_config, DataHandler
 from misc import check_working_directory
 from imports import argparse
 
-from imports import plt
-
 def main(
     args: argparse.Namespace
 ):
@@ -48,7 +46,6 @@ def main(
     print("Done!")
 
     print("Training...")
-    loss_hist = []
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
         loss, acc = model.fit(train)
