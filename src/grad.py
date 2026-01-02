@@ -135,7 +135,7 @@ class Sigmoid(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         (input_,) = ctx.saved_tensors
-        print(input_.mean())
+        # print(input_.mean())
         grad_input = grad_output.clone()
         grad = (
             grad_input

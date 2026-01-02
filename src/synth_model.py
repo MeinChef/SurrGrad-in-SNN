@@ -2,7 +2,7 @@ from imports import torch
 from imports import snntorch as snn
 from imports import tqdm
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
-from grad import sigmoid
+# from grad import sigmoid
 
 DEBUG = False
 
@@ -36,7 +36,7 @@ class SynthModel(torch.nn.Module):
 
         # resolve gradient
         # surrogate = resolve_gradient(config = config["surrogate"])
-        surrogate = sigmoid(5)
+        surrogate = resolve_gradient(config["surrogate"])
 
         ###########################
         ### DEFINITION OF MODEL ###
@@ -147,6 +147,15 @@ class SynthModel(torch.nn.Module):
             device = self.device
         )
 
+        out_mem = torch.zeros(
+            [
+                self._time_steps,
+                x.shape[1],
+                self._neurons_out
+            ],
+            device = self.device
+        )
+
         for step in range(self._time_steps):  
             # layer 1
             cur1 = self.con1(x[step])
@@ -169,6 +178,7 @@ class SynthModel(torch.nn.Module):
 
 
             out[step] = spk_last
+            out_mem[step] = mem_last
 
             if self._record:
                 self.rec_spk1[step] = spk1
@@ -180,7 +190,7 @@ class SynthModel(torch.nn.Module):
             print(f"Output range: [{out.min():.3f}, {out.max():.3f}]")
     
 
-        return out
+        return out, out_mem
 
     def fit(
         self,
@@ -206,12 +216,15 @@ class SynthModel(torch.nn.Module):
         loss_hist = []
         acc_hist  = []
 
+        # TEMPORARY: membrane loss
+        lossfn_mem = torch.nn.CrossEntropyLoss()
+
         # set model in training mode
         self.train()
 
         # training loop
-        # for i, (x, target) in tqdm.tqdm(enumerate(data)):
-        for i, (x, target) in enumerate(data):
+        for i, (x, target) in tqdm.tqdm(enumerate(data)):
+        # for i, (x, target) in enumerate(data):
 
             # check if the training has been already done to the specified amount
             if i == self._partial_train:
@@ -222,7 +235,7 @@ class SynthModel(torch.nn.Module):
             target = target.to(self.device)
 
             # make prediction
-            pred = self.forward(x)
+            pred, pred_mem = self.forward(x)
 
             # basic finite checks (loss may be finite while grads NaN)
             if not torch.isfinite(pred).all():
@@ -236,6 +249,11 @@ class SynthModel(torch.nn.Module):
 
             loss = self.lossfn(pred, target)
             acc = self.acc(pred, target)
+
+            # TEMPORARY: membrane loss
+            loss_val_mem = torch.zeros((1), device = self.device)
+            for step in range(self._time_steps):
+                loss_val_mem += lossfn_mem(pred_mem[step], target)
 
             if not torch.isfinite(loss):
                 print(f"DEBUG: non-finite loss at batch {i}: {loss}")
@@ -254,19 +272,21 @@ class SynthModel(torch.nn.Module):
             self.optim.zero_grad()
             # loss.backward(retain_graph = True)
             # loss.backward()
-            try:
-                loss.backward()
-            except RuntimeError as e:
-                # autograd anomaly should report the op; print helpful diagnostics
-                print(f"DEBUG: RuntimeError during backward at batch {i}: {e}")
-                # print a few tensor stats to help locate the issue
-                for name, tensor in [("x", x), ("pred", pred), ("target", target)]:
-                    print(f"DEBUG: {name} finite: {torch.isfinite(tensor).all().item()} has_nan: {tensor.isnan().any().item()} max: {tensor.max().item()} min: {tensor.min().item()}")
-                # also check params
-                for idx, p in enumerate(self.parameters()):
-                    if not torch.isfinite(p).all():
-                        print(f"DEBUG: param {idx} contains non-finite values")
-                raise
+            # try:
+            #     loss.backward()
+            # except RuntimeError as e:
+            #     # autograd anomaly should report the op; print helpful diagnostics
+            #     print(f"DEBUG: RuntimeError during backward at batch {i}: {e}")
+            #     # print a few tensor stats to help locate the issue
+            #     for name, tensor in [("x", x), ("pred", pred), ("target", target)]:
+            #         print(f"DEBUG: {name} finite: {torch.isfinite(tensor).all().item()} has_nan: {tensor.isnan().any().item()} max: {tensor.max().item()} min: {tensor.min().item()}")
+            #     # also check params
+            #     for idx, p in enumerate(self.parameters()):
+            #         if not torch.isfinite(p).all():
+            #             print(f"DEBUG: param {idx} contains non-finite values")
+            #     raise
+
+            loss_val_mem.backward()
 
             if DEBUG:
                 # print grad norm
@@ -289,7 +309,8 @@ class SynthModel(torch.nn.Module):
                 print("param change norm:", (p1 - p0).norm().item())
 
             # TODO: dump list regularly to file
-            loss_hist.append(loss.item())
+            # loss_hist.append(loss.item())
+            loss_hist.append(loss_val_mem.item())
             acc_hist.append(acc)
         
         torch.cuda.empty_cache()
@@ -352,7 +373,7 @@ class SynthModel(torch.nn.Module):
 
                 # make prediction
                 if self._record:
-                    pred = self.forward(x)
+                    pred, _ = self.forward(x)
 
                     # create a mask for the hidden layer recordings
                     mask = self.create_mask(
@@ -373,7 +394,7 @@ class SynthModel(torch.nn.Module):
                             rec_dict["class_0"][1].append(self.rec_spk2[:, mask].detach().clone().cpu())
                             # rec_dict["class_0"][2].append(self.rec_spk3[:, mask].detach().clone().cpu())
                 else:
-                    pred = self.forward(x)
+                    pred, _ = self.forward(x)
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
@@ -385,7 +406,6 @@ class SynthModel(torch.nn.Module):
                 acc_hist.append(acc)
             
         torch.cuda.empty_cache()
-        
         return loss_hist, acc_hist, rec_dict
 
     ######################################

@@ -83,6 +83,12 @@ def resolve_loss(config: dict) -> Callable:
             correct_rate = config["correct_rate"],
             incorrect_rate = config["incorrect_rate"]
         )
+    elif name == "mse_membrane":
+        return functional.loss.mse_membrane_loss(
+            time_var_targets = False,
+            on_target = config["on_target"],
+            off_target = config["off_target"]
+        )
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 
