@@ -3,6 +3,8 @@ from synth_model import SynthModel
 from data import load_config, DataHandler
 from misc import check_working_directory
 from imports import argparse
+from imports import functional
+from imports import snntorch as snn
 
 def main(
     args: argparse.Namespace
@@ -28,9 +30,10 @@ def main(
         record = args.record_hidden
     )
 
-    # initialise Datahandler
-    handler = DataHandler(
-        path = args.data_path
+    # hot new shit
+    recorder = functional.probe.OutputMonitor(
+        net = model,
+        instance = snn.Leaky
     )
     print("Done!")
 
@@ -50,52 +53,41 @@ def main(
         print(f"Epoch: {e}")
         loss, acc = model.fit(train)
 
-        handler.plot_loss_accuracy(
-            loss = loss,
-            accuracy = acc,
-            training = True,
-            epoch = e,
-            filename = f"train-epoch{e}",
-            show = False
-        )
+        # handler.plot_loss_accuracy(
+        #     loss = loss,
+        #     accuracy = acc,
+        #     training = True,
+        #     epoch = e,
+        #     filename = f"train-epoch{e}",
+        #     show = False
+        # )
 
-        loss, acc, rec = model.evaluate(
+        loss, acc = model.evaluate(
             data = test,
             record_per_class = True
         )
 
         # save the spike recordings cleanly to a file
-        handler.flush_to_file(
-            loss = loss,
-            loss_ident = f"test-{e}",
-            acc = acc,
-            acc_ident = f"test-{e}",
-            spk_rec = rec,
-            spk_ident = None
-        )
+        # handler.flush_to_file(
+        #     loss = loss,
+        #     loss_ident = f"test-{e}",
+        #     acc = acc,
+        #     acc_ident = f"test-{e}",
+        #     spk_rec = rec,
+        #     spk_ident = None
+        # )
 
         # plot the spikes and loss/accuracy
-        handler.plot_loss_accuracy(
-            loss = loss,
-            accuracy = acc,
-            training = False,
-            epoch = e,
-            filename = f"test-epoch{e}",
-            show = False
-        )
+        # handler.plot_loss_accuracy(
+        #     loss = loss,
+        #     accuracy = acc,
+        #     training = False,
+        #     epoch = e,
+        #     filename = f"test-epoch{e}",
+        #     show = False
+        # )
 
-        if rec is not None:
-            handler.plot_spikes(
-                recording = rec,
-                epoch = e,
-                filename = f"spk-test-epoch{e}",
-                show = True
-            )
-
-            # save the spike recordings cleanly to a file
-            handler.spk_rec_to_file(
-                rec
-            )
+        
     print("Success!")
     return True
     

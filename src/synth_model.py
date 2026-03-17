@@ -7,7 +7,6 @@ class SynthModel(torch.nn.Module):
     def __init__(
         self,
         config: dict,
-        record: bool | None = None
     ) -> None:
 
         """
@@ -89,7 +88,6 @@ class SynthModel(torch.nn.Module):
         self._partial_test  = config["partial_testing"]
         self._neurons_out = config["neurons_out"]
 
-        self._record = record
         self._samples = config["samples"]
         self._build = False
 
@@ -155,12 +153,6 @@ class SynthModel(torch.nn.Module):
 
             out[step] = spk3
 
-            if self._record:
-                self.rec_spk1[step] = spk1
-                self.rec_spk2[step] = spk2
-                self.rec_spk3[step] = spk3
-
-
         return out
 
     def fit(
@@ -179,9 +171,9 @@ class SynthModel(torch.nn.Module):
         :rtype: tuple[list, list]
         """
         
-        # check if model has been build already
-        if not self._build:
-            self.build_vaules(next(iter(data))[0])
+        # # check if model has been build already
+        # if not self._build:
+        #     self.build_vaules(next(iter(data))[0])
 
         # pre-define variables
         loss_hist = []
@@ -225,8 +217,7 @@ class SynthModel(torch.nn.Module):
     def evaluate(
         self,
         data: torch.utils.data.DataLoader,
-        record_per_class: bool = False
-    ) -> tuple[list, list, dict | None]:
+    ) -> tuple[list, list]:
         """
         Function for evaluating (testing) the network. 
         The Dataloader should contain the data and the labels.
@@ -241,25 +232,13 @@ class SynthModel(torch.nn.Module):
         :rtype: tuple[list, list, dict | None]
         """
         
-        # check if model has been build already 
-        if not self._build:
-            self.build_vaules(next(iter(data))[0])
+        # # check if model has been build already 
+        # if not self._build:
+        #     self.build_vaules(next(iter(data))[0])
             
         # pre-define variables
         loss_hist = []
         acc_hist  = []
-        if self._record:
-            if record_per_class:
-                rec_dict  = {}
-                for cls in range(self._counter.shape[0]):
-                    rec_dict[f"class_{cls}"] = [[], [], []]
-
-            else:
-                rec_dict = {
-                    "class_0": [[], [], []]
-                }
-        else:
-            rec_dict = None
         # set model in evaulating mode
         self.eval()
 
@@ -275,30 +254,7 @@ class SynthModel(torch.nn.Module):
                 x = x.to(self.device)
                 target = target.to(self.device)
 
-                # make prediction
-                if self._record:
-                    pred = self.forward(x)
-
-                    # create a mask for the hidden layer recordings
-                    mask = self.create_mask(
-                        target = target,
-                        per_class = record_per_class
-                    )
-                    if torch.is_tensor(mask):
-                        if record_per_class:
-                            # write the recordings per class
-                            for cls in range(self._counter.shape[0]):
-                                # separate the recordings to the individual layers
-                                rec_dict[f"class_{cls}"][0].append(self.rec_spk1[:, mask[cls]].detach().clone().cpu())
-                                rec_dict[f"class_{cls}"][1].append(self.rec_spk2[:, mask[cls]].detach().clone().cpu())
-                                rec_dict[f"class_{cls}"][2].append(self.rec_spk3[:, mask[cls]].detach().clone().cpu())
-                        else:
-                            # and no distinction between classes
-                            rec_dict["class_0"][0].append(self.rec_spk1[:, mask].detach().clone().cpu())
-                            rec_dict["class_0"][1].append(self.rec_spk2[:, mask].detach().clone().cpu())
-                            rec_dict["class_0"][2].append(self.rec_spk3[:, mask].detach().clone().cpu())
-                else:
-                    pred = self.forward(x)
+                pred = self.forward(x)
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
@@ -311,184 +267,47 @@ class SynthModel(torch.nn.Module):
             
         torch.cuda.empty_cache()
         
-        return loss_hist, acc_hist, rec_dict
+        return loss_hist, acc_hist
 
-    ######################################
-    ### DEFINITION OF HELPER FUNCTIONS ###
-    ######################################
+    # def build_vaules(
+    #     self,
+    #     x: torch.Tensor,
+    #     batch_first: bool = True
+    # ) -> None:
+    #     """
+    #     Function needs to be called before starting to train the model.
+    #     It sets and infers values needed for training.
 
-    def create_mask(
-        self,
-        target: torch.Tensor,
-        per_class: bool = True
-    ) -> torch.Tensor | bool:
+    #     :param x: A batch, as it would be usually passed through the network
+    #     :type x: Tensor
 
-        '''
-        Function to create a mask for the hidden layer recordings. 
-        Returns mask if there is still something to be recorded.
-        If the mask would mask the whole input, False is being returned instead.
+    #     :param batch_first: Whether the first dimension is batch_size (True) or time_steps (False). Default True
+    #     :type batch_first: bool, optional
 
-        :param target: tensor - the target labels for the minibatch
-        :type target: torch.Tensor, required
+    #     :returns:
+    #     :rtype: None
+    #     """
 
-        :return: mask - a boolean mask for the hidden layer recordings or False if there is no value in this batch to be recorded
-        :rtype: torch.Tensor | bool
-        '''
+    #     mem1 = self.neuron1.reset_mem()
+    #     mem2 = self.neuron2.reset_mem()
+    #     mem3 = self.neuron3.reset_mem()
 
-        # sanity checks
-        if not self._counter.shape[0] == self._neurons_out:
-            raise ValueError(
-                "Something went wrong. Shapes of _counter and config['neurons_out'] do not match." + 
-                f"Actual:\n_counter: {self._counter.shape}\nneurons_out: {self._neurons_out}"
-            )
-        
-        if (self._counter < 0).any():
-            raise ValueError(
-                "Something went wrong. Negative _counter encountered." +
-                f"Values: {self._counter}"
-            )
-        
-        # all classes have been recorded the specified amount of times
-        # no need to create a mask
-        if (self._counter == 0).all():
-            return False
-        
-        # pre-allocate the mask
-        mask = torch.zeros_like(
-            target, 
-            dtype = torch.bool, 
-            device = target.device
-        )
-        # duplicate the mask for all classes
-        mask = mask.unsqueeze(0).repeat(self._counter.shape[0], 1)
+    #     x = x.to(self.device)
 
-        # loop over every class and save if it is contained in the target tensor
-        for cls in range(self._counter.shape[0]):
-            if self._counter[cls] == 0:
-                # class has been already recorded
-                continue
-            else:
-                # get indices for the class
-                # since target is a 1D tensor, we will get one 1D tensor with indices
-                idxs = torch.nonzero(target == cls, as_tuple = True)[0]
-                # this is legal, even on tensors that are smaller than self._counter[cls]
-                # though it feels highly illegal
-                idxs = idxs[:self._counter[cls]]
-                
-                # substract the count of found samples
-                self._counter[cls] -= len(idxs)
-                # create a mask for this class
-                mask[cls][idxs] = True
+    #     if batch_first:
+    #         # reshape to actually have the time_steps first again
+    #         x = x.permute(1, 0, -1)
 
-        # collapse the masks into one tensor if wanted
-        if not per_class:
-            mask = mask.sum(dim = 0)
+    #     # layer 1
+    #     cur1 = self.con1(x[0])
+    #     spk1, mem1 = self.neuron1(cur1, mem1)
 
-        return mask
+    #     # layer 2
+    #     cur2 = self.con2(spk1)
+    #     spk2, mem2 = self.neuron2(cur2, mem2)
 
+    #     # layer 3
+    #     cur3 = self.con3(spk2)
+    #     spk3, mem3 = self.neuron3(cur3, mem3)
 
-    def build_vaules(
-        self,
-        x: torch.Tensor,
-        batch_first: bool = True
-    ) -> None:
-        """
-        Function needs to be called before starting to train the model.
-        It sets and infers values needed for training.
-
-        :param x: A batch, as it would be usually passed through the network
-        :type x: Tensor
-
-        :param batch_first: Whether the first dimension is batch_size (True) or time_steps (False). Default True
-        :type batch_first: bool, optional
-
-        :returns:
-        :rtype: None
-        """
-
-        mem1 = self.neuron1.reset_mem()
-        mem2 = self.neuron2.reset_mem()
-        mem3 = self.neuron3.reset_mem()
-
-        x = x.to(self.device)
-
-        if batch_first:
-            # reshape to actually have the time_steps first again
-            x = x.permute(1, 0, -1)
-
-        # layer 1
-        cur1 = self.con1(x[0])
-        spk1, mem1 = self.neuron1(cur1, mem1)
-
-        # layer 2
-        cur2 = self.con2(spk1)
-        spk2, mem2 = self.neuron2(cur2, mem2)
-
-        # layer 3
-        cur3 = self.con3(spk2)
-        spk3, mem3 = self.neuron3(cur3, mem3)
-
-        if self._record:
-            self._init_tensors__(
-                spk1.shape,
-                spk2.shape,
-                spk3.shape
-            )
-
-        self._build = True
-
-
-
-    def _init_tensors__(
-        self,
-        layer1_shape: tuple,
-        layer2_shape: tuple,
-        layer3_shape: tuple
-    ) -> None:
-        
-        """
-        Function that allocates the Tensors used during the recording of the hidden layers.
-
-        :param layerX_shape: Tuple that defines the output shapes of layer X
-        :type layerX_shape: Tuple
-
-        :returns:
-        :rtype: None
-        """
-        
-        self.rec_spk1 = torch.zeros(
-            [
-                self._time_steps,
-                *layer1_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
-
-        self.rec_spk2 = torch.zeros(
-            [
-                self._time_steps,
-                *layer2_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
-
-        self.rec_spk3 = torch.zeros(
-            [
-                self._time_steps,
-                *layer3_shape
-            ],
-            dtype = torch.float32,
-            device = self.device,
-            requires_grad = False
-        )
-
-        self._counter = torch.full(
-            size = (self._neurons_out,),
-            fill_value = self._samples,
-            dtype = torch.int32,
-            device = self.device
-        )
+    #     self._build = True
