@@ -1,11 +1,8 @@
-from imports import os
-from imports import datetime
-from imports import warnings
-from imports import numpy as np
-from imports import torch
 from imports import yaml
+from imports import datetime
+from imports import functional
+from imports import torch
 from imports import plt
-from misc import make_path
 
 
 # load the config.yml
@@ -15,298 +12,59 @@ def load_config(path: str = "config.yml") -> tuple[dict, dict]:
 
     return configs["data"], configs["model"]
 
-class DataHandler:
+class DataHandler():
     def __init__(
         self,
-        path: str = "data/",
+        time_steps: int,
+        datapath: str = "data/",
     ) -> None:
-        """
-        Class that handles the recording and loading of the data that is being created during training.
-        """
-        self.path = path
+        
+        self.path = datapath
         self.now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.time_steps = time_steps
 
-    def spk_rec_to_file(
+    def visualise(
         self,
-        data: dict = None,
-        identifier: str | list[str] = None,
-    ) -> None:
-        """
-        Function for saving the spike recording of the hidden layers into a file on disk.
+        recorder: functional.probe.OutputMonitor,
+        blocking: bool = True
+    ) -> plt.figure:
         
-        :param data: Dictionary, with each key containing a list: [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-        :type data: dict, required
-        
-        :param identifier: Useful for saving the data with a custom filename
-        :type identifier: str or list[str], optional
-
-        :param path: Path where to save the data. Default data/rec/
-        :type path: str, optional
-        """
-
-        # make path os-independent
-        path = make_path(self.path + "/rec/")
-
-        # TODO: change path resolving with str.split() and os.path.join()
-        if isinstance(identifier, list):
-            assert len(identifier) == 3
-        elif isinstance(identifier, str):
-            identifier = [identifier + "-layer1.npz", identifier + "-layer2.npz", identifier + "-layer3.npz"]
-        elif identifier is None:
-            identifier = [self.now + "-layer1.npz", self.now + "-layer2.npz", self.now + "-layer3.npz"]
-
-        for key in data.keys():
-            for i, layer in enumerate(data[key]):
-                # check if there are even any recordings left to save
-                if not layer:
-                    continue
-
-                # try concatenating the layers along batch dimension
-                try:
-                    array = torch.cat(layer, dim = 1)
-                    if array.get_device() >= 0:
-                        array = array.cpu()
-                    array = array.numpy().astype(np.int8)
-
-                    np.save(
-                        os.path.join(
-                            path, 
-                            key + "_" + identifier[i]
-                        ),
-                        array
-                    )
-
-                # if that didn't work, save each recording individually
-                except Exception as e:
-                    # warn that it didn't happen as expected
-                    warnings.warn(
-                        "Failed saving the recordings as single Tensor. " +
-                        "Proceeding with saving the recordings individually.\n" +
-                        f"Actual Exception: {e}"
-                    )
-
-                    for j, rec in enumerate(layer):
-
-                        # if recording is in GPU memory
-                        if rec.get_device() >= 0:
-                            rec = rec.cpu().numpy()
-                            # we shouldn"t loose any expressiveness, since spikes are usually 0s or 1s
-                            layer[j] = rec.astype(np.int8) 
-                        # or it's on cpu
-                        elif rec.get_device() == -1:
-                            layer[j] = rec.numpy().astype(np.int8)
-                    
-                    np.savez_compressed(
-                        os.path.join(
-                            path,
-                            key + identifier[i]
-                        ),
-                        layer
-                    )
-
-    def load_spk_rec(
-        self,
-        identifier: str = "test-ep0"
-    ) -> list[np.ndarray]:
-        """
-        Function for loading the spike recordings of the hidden layers from a file on disk.
-        
-        :param config: config dictionary
-        :type config: dict
-        
-        :param identifier: Useful for loading the data with a custom filename
-        :type identifier: str, optional
-
-        :return: list of the structure [[recording_of_layer1], [recording_of_layer2], [recording_of_layer3]]
-        :rtype: list[np.ndarray]
-        """
-
-        paths = [make_path(self.path + "/rec/" + identifier + f"-layer{layer}.npz") for layer in range(1,4)]
-
-        recordings = []
-        for path in paths:
-            try:
-                data = np.load(path) # old: allow_pickle = True
-                # data is an open file - needs to be closed before returning
-                # data is a dictionary-ish containing keys arr_0, arr_1.....
-                
-                layer = []
-                for i in range(len(data)):
-                    layer.append(
-                        pad_along_axis(
-                            data.get(f"arr_{i}"),
-                            pad_val = 0
-                        )
-                    )
-
-                recordings.append(
-                    np.concatenate(
-                        layer,
-                        axis = 1,
-                        dtype = np.int8
-                    )
-                )
-                data.close()
-
-            except FileNotFoundError:
-                print(f"File {path} not found. Skipping...")
-                continue
-
-        return recordings
-
-    def flush_to_file(
-        self,
-        loss: list,
-        loss_ident: str | None = None,
-        acc: list = None, 
-        acc_ident: str | None = None,
-        spk_rec: dict[list[list,list,list]] = None,
-        spk_ident: str = None
-    ) -> None:
-        """
-        Saves the output from the model to a file, human-readable.
-        
-        :param loss: list of loss values
-        :type loss: list
-        
-        :param acc: list of accuracy values
-        :type acc: list
-
-        :param spk_rec: spk_rec of all layers 
-        :type spk_rec: dict, optional
-        """
-
-        if len(loss) != 0:
-            try:
-                np.savetxt(
-                    make_path(self.path + f"/loss_{loss_ident}.txt"),
-                    loss,
-                    fmt = "%.8f"
-                )
-            except Exception as e:
-                print(f"An error occurred: {e}")
-                breakpoint()
-        if acc:
-            try:
-                if len(acc) != 0:
-                    np.savetxt(
-                        make_path(self.path + f"/acc_{acc_ident}.txt"),
-                        acc,
-                        fmt = "%.8f"
-                    )
-            except Exception as e:
-                print(f"An error occurred: {e}")
-                breakpoint()
-
-        if spk_rec:
-            try:
-                self.spk_rec_to_file(
-                    data = spk_rec,
-                    identifier = spk_ident,
-                )
-            except Exception as e:
-                print(f"An error occurred: {e}")
-                breakpoint()
-
-    def plot_spikes(
-        self,
-        recording: dict,
-        training: bool = False,
-        epoch: int = -1,
-        filename: str | None = None,
-        show: bool = False,
-        **kwargs
-    ) -> plt.Axes:
-        
-        # check how many plots to create
-        # for each class there should be one 
-        classes = len(recording)
+        # instantiate plot
         fig, axes = plt.subplots(
-            ncols = 3,
-            nrows = classes,
-            sharex = "all",
-            sharey = "row",
-            # this is not squeezing the plots in a nicer layout,
-            # but rather the output array, such that it is always 2D
-            squeeze = False
+            nrows = 2,
+            ncols = len(recorder.monitored_layers),
+            squeeze = False,
+            sharex = 'all',
+            figsize = (14,5),
+            dpi = 200
         )
 
-        for x, row in enumerate(axes):
-            for y, single in enumerate(row):
-                rec_rows, rec_cols = np.nonzero(
-                    # matrix to be plotted e.g.
-                    recording[x, y]
-                )
-                axes[x,y].scatter(
-                    rec_rows,
-                    rec_cols,
-                )
+        # disentangle the data
+        # of structure:
+        # recorder
+        #   dict (with keys monitored_layers)
+        #       list (len time_steps)
+        #           tuple (spikes, membrane)
+        #               spikes / membrane ofc have a shape of [minibatch, out_features]
+        for i, layer in enumerate(recorder.monitored_layers):
+            # i'm only interested in the first sample for now
+            layerlist = recorder[layer][:self.time_steps]
+            spikes = torch.stack([x[0,:] for x, _ in layerlist]).T
+            membrane = torch.stack([x[0,:] for _, x in layerlist])
 
+            print(f"Layer: {layer}")
+            print(f"Spikes: Max: {spikes.max()}, Sum: {spikes.sum()}, Size: {spikes.shape}")
+            print(f"Membrane: Max: {membrane.max()}, Sum: {membrane.sum()}, Size: {membrane.shape}")
 
-    def plot_loss_accuracy(
-        self,
-        loss: list,
-        accuracy: list,
-        training: bool = False,
-        epoch: int = -1,
-        filename: str | None = None,
-        show: bool = False
-    ) -> None:
-        
-
-
-        fig, ax1 = plt.subplots()
-
-        # plot loss on the left y-axis
-        ax1.set_xlabel("Batches")
-        ax1.set_ylabel("Loss", color = "orange")
-        ax1.plot(
-            range(len(loss)), 
-            loss, 
-            color = "orange", 
-            label = "Loss"
-        )
-        ax1.tick_params(axis = "y", labelcolor = "orange")
-
-        # create a second y-axis for accuracy
-        ax2 = ax1.twinx()
-        ax2.set_ylabel("Accuracy", color = "blue")
-        ax2.plot(
-            range(len(loss)), 
-            accuracy, 
-            color = "blue", 
-            label = "Accuracy"
-        )
-        ax2.tick_params(axis = "y", labelcolor = "blue")
-
-        plt.title(f"Loss and Accuracy. Epoch {epoch}{' of Training' if training else ' of Testing'}")
-        fig.tight_layout()
-        if filename:
-            plt.savefig(
-                os.path.join(self.path, self.now + "_" + filename + ".png")
+            axes[0][i].spy(
+                spikes,
+                markersize = max(i * .2, 0.1)
             )
-        if show:
-            plt.show()
+            axes[0][i].set_aspect('auto')
 
-        
-def pad_along_axis(
-        array: np.ndarray, 
-        target_length: int = 314, # as calculated from misc.get_longest_observation 
-        axis: int = 0,
-        pad_val: int = -1
-    ) -> np.ndarray:
-
-    pad_size = target_length - array.shape[axis]
-
-    if pad_size <= 0:
-        return array
-
-    npad = [(0, 0)] * array.ndim
-    npad[axis] = (0, pad_size)
-
-    return np.pad(
-        array, 
-        pad_width = npad, 
-        mode = "constant",
-        constant_values = pad_val
-    )
+            axes[1][i].plot(
+                membrane
+            )
+            axes[1][i].set_aspect('auto')
+        plt.tight_layout(pad=2.0)
+        plt.show()

@@ -34,6 +34,12 @@ def main(
         net = model,
         instance = snn.Leaky
     )
+
+    # 
+    handler = DataHandler(
+        time_steps = cfg_data["time_steps"]["val"],
+        datapath = "data/"
+    )
     print("Done!")
 
     # generate dataset
@@ -50,6 +56,7 @@ def main(
     print("Training...")
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
+        recorder.disable()
         loss, acc = model.fit(train)
 
         # handler.plot_loss_accuracy(
@@ -60,11 +67,24 @@ def main(
         #     filename = f"train-epoch{e}",
         #     show = False
         # )
-
+        recorder.enable()
         loss, acc = model.evaluate(
             data = test,
         )
-        breakpoint()
+
+        handler.visualise(
+            recorder = recorder
+        )
+
+        # make another dataset with curated datapoints for visualisation
+        # record that, because the recorder is memory hungry af
+        # 5 minibatches a 128 samples took ca 9GB of RAM
+
+        # recorder.enable()
+        # loss, acc = model.evaluate(
+        #     data = curated_test
+        # )
+        # handler.visualise(recorder)
 
         # save the spike recordings cleanly to a file
         # handler.flush_to_file(
@@ -85,6 +105,7 @@ def main(
         #     filename = f"test-epoch{e}",
         #     show = False
         # )
+        recorder.clear_recorded_data()
 
         
     print("Success!")
