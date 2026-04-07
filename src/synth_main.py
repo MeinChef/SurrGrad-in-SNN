@@ -51,6 +51,14 @@ def main(
         shuffle = cfg_data["shuffle"],
         prefetch = cfg_data["prefetch"],
     )
+
+    curated = datagen.generate_dataset(
+        no_samples = cfg_model["samples"],
+        batch_size = 1,
+        train_split = 0,
+        shuffle = False,
+        prefetch = cfg_data["prefetch"],
+    )
     print("Done!")
 
     print("Training...")
@@ -67,20 +75,20 @@ def main(
         #     filename = f"train-epoch{e}",
         #     show = False
         # )
-        recorder.enable()
         loss, acc = model.evaluate(
             data = test,
+        )
+
+        # do the recording of the hidden states
+        recorder.enable()
+        _, _ = model.evaluate(
+            data = curated
         )
 
         handler.visualise(
             recorder = recorder
         )
 
-        # make another dataset with curated datapoints for visualisation
-        # record that, because the recorder is memory hungry af
-        # 5 minibatches a 128 samples took ca 9GB of RAM
-
-        # recorder.enable()
         # loss, acc = model.evaluate(
         #     data = curated_test
         # )
