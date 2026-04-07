@@ -83,6 +83,13 @@ def resolve_loss(config: dict) -> Callable:
             correct_rate = config["correct_rate"],
             incorrect_rate = config["incorrect_rate"]
         )
+    elif name == "mse_membrane":
+        return functional.loss.mse_membrane_loss(
+            on_target = config["on_target"],
+            off_target = config["off_target"]
+        )
+    elif name == "mse":
+        return torch.nn.MSELoss()
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 
@@ -101,7 +108,7 @@ def resolve_acc(config: dict) -> Callable:
     else:
         raise NameError("The accuracy function specified in config is unresolveable. Check source code and typos")
 
-def resolve_optim(config: dict, params) -> Callable:
+def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
     '''
     Function for resolving the optimizer, given as a string in config.yml, and returning a function, with proper fromatting
     for further use.
@@ -126,7 +133,7 @@ def resolve_optim(config: dict, params) -> Callable:
     else:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
 
-def make_path(path: str) -> os.PathLike:
+def make_path(path: str) -> str | list[str]:
     '''
     Function for creating cross-os-compatible paths from strings.
     
