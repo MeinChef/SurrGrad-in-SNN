@@ -306,7 +306,7 @@ class DataGenerator:
         train_split: float = 0.8,
         prefetch: int = 16,
         workers: int = max(2, os.cpu_count() - 4)
-    ) -> torch.utils.data.DataLoader:
+    ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader] | torch.utils.data.DataLoader:
         
         """
         Generate PyTorch DataLoader(s) from synthetic spike data.\n

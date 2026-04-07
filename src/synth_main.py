@@ -27,7 +27,6 @@ def main(
     # initialise model
     model = SynthModel(
         config = cfg_model,
-        record = args.record_hidden
     )
 
     # hot new shit
@@ -64,8 +63,8 @@ def main(
 
         loss, acc = model.evaluate(
             data = test,
-            record_per_class = True
         )
+        breakpoint()
 
         # save the spike recordings cleanly to a file
         # handler.flush_to_file(
