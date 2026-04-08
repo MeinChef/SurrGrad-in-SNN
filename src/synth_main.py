@@ -37,6 +37,7 @@ def main(
 
     # 
     handler = DataHandler(
+        recorder = recorder,
         time_steps = cfg_data["time_steps"]["val"],
         datapath = "data/"
     )
@@ -85,9 +86,12 @@ def main(
             data = curated
         )
 
+        rate = handler.measure_tendency()
         handler.visualise(
-            recorder = recorder
+            # recorder = recorder
         )
+        handler.visualise_tendencies(rate)
+        return 
 
         # loss, acc = model.evaluate(
         #     data = curated_test
