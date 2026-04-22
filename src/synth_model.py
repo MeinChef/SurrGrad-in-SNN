@@ -1,6 +1,7 @@
 from imports import torch
 from imports import snntorch as snn
 from imports import tqdm
+from imports import Literal, Callable
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
 class SynthModel(torch.nn.Module):
@@ -86,7 +87,17 @@ class SynthModel(torch.nn.Module):
         self._epochs = config["epochs"]
         self._partial_train = config["partial_training"]
         self._partial_test  = config["partial_testing"]
-        self._neurons_out = config["neurons_out"]
+        self._move_fraction = config["move_fraction"]
+
+        # neuron features
+        self._in_first = config["features"]["val"]
+        self._out_first = config["neurons_hidden_1"]
+        self._in_second = self._out_first
+        self._out_second = config["neurons_hidden_2"]
+        self._in_third = self._out_second
+        self._out_third = config["neurons_out"]
+        self._neurons_out = self._out_third
+
 
         self._samples = config["samples"]
         self._build = False
@@ -157,7 +168,7 @@ class SynthModel(torch.nn.Module):
 
     def fit(
         self,
-        data: torch.utils.data.DataLoader
+        data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
     ) -> tuple[list, list]:
         
         """
@@ -216,7 +227,7 @@ class SynthModel(torch.nn.Module):
 
     def evaluate(
         self,
-        data: torch.utils.data.DataLoader,
+        data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
     ) -> tuple[list, list]:
         """
         Function for evaluating (testing) the network. 
@@ -269,45 +280,145 @@ class SynthModel(torch.nn.Module):
         
         return loss_hist, acc_hist
 
-    # def build_vaules(
-    #     self,
-    #     x: torch.Tensor,
-    #     batch_first: bool = True
-    # ) -> None:
-    #     """
-    #     Function needs to be called before starting to train the model.
-    #     It sets and infers values needed for training.
+    def _forward_first_layer(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        
+        # setup
+        mem = self.neuron1.reset_mem()
 
-    #     :param x: A batch, as it would be usually passed through the network
-    #     :type x: Tensor
+        # pre-allocate the output-tensor
+        out = torch.zeros(
+            [
+                self._time_steps,
+                x.shape[1],             # batch size
+                self._out_first
+            ],
+            device = self.device
+        )
 
-    #     :param batch_first: Whether the first dimension is batch_size (True) or time_steps (False). Default True
-    #     :type batch_first: bool, optional
+        # loop over time
+        for step in range(self._time_steps):
+            cur = self.con1(x[step])
+            out[step], mem = self.neuron1(cur, mem)
 
-    #     :returns:
-    #     :rtype: None
-    #     """
+        return out
+    
+    def _forward_second_layer(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        
+        # setup
+        mem = self.neuron2.reset_mem()
 
-    #     mem1 = self.neuron1.reset_mem()
-    #     mem2 = self.neuron2.reset_mem()
-    #     mem3 = self.neuron3.reset_mem()
+        # pre-allocate the output-tensor
+        out = torch.zeros(
+            [
+                self._time_steps,
+                x.shape[1],             # batch size
+                self._out_second
+            ],
+            device = self.device
+        )
 
-    #     x = x.to(self.device)
+        # loop over time
+        for step in range(self._time_steps):
+            cur = self.con2(x[step])
+            out[step], mem = self.neuron2(cur, mem)
 
-    #     if batch_first:
-    #         # reshape to actually have the time_steps first again
-    #         x = x.permute(1, 0, -1)
+        return out
+    
+    def _forward_third_layer(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        
+        # setup
+        mem = self.neuron1.reset_mem()
 
-    #     # layer 1
-    #     cur1 = self.con1(x[0])
-    #     spk1, mem1 = self.neuron1(cur1, mem1)
+        # pre-allocate the output-tensor
+        out = torch.zeros(
+            [
+                self._time_steps,
+                x.shape[1],             # batch size
+                self._out_third
+            ],
+            device = self.device
+        )
 
-    #     # layer 2
-    #     cur2 = self.con2(spk1)
-    #     spk2, mem2 = self.neuron2(cur2, mem2)
+        # loop over time
+        for step in range(self._time_steps):
+            cur = self.con3(x[step])
+            out[step], mem = self.neuron3(cur, mem)
 
-    #     # layer 3
-    #     cur3 = self.con3(spk2)
-    #     spk3, mem3 = self.neuron3(cur3, mem3)
+        return out
+    
+    def _jitter_layer_out(
+        self, 
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        raise NotImplementedError()
+    
+    def _shuffle_layer_out(
+        self, 
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        
+        raise NotImplementedError()
+        # get indices where spikes are, and where they aren't
+        spikes = x.nonzero()
+        valid_to = torch.nonzero(x == 0)
 
-    #     self._build = True
+        for neuron in range(x.shape[1]):
+            # create mask for each neuron
+            spk_mask = spikes[1] == neuron
+            move_mask = valid_to[1] == neuron
+            to_move = torch.ceil(spk_mask.sum() * self._move_fraction)
+
+            # jumble spikes and select the first to_move ones
+            selected_times = 
+
+        
+
+
+    def augmented_forward(
+        self,
+        data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
+        augment: Literal["shuffle", "jitter"] | Callable = "jitter",                    # noqa: F821
+        only_nth_layer: int | None = None
+    ) -> tuple[list, list]:
+        
+        if augment != "jitter" and augment != "shuffle" and callable(augment):
+            raise ValueError(f"Expected 'shuffle' or 'jitter'. Got '{augment}' (Type: {type(augment)}) instead.")
+        
+        if augment == "jitter":
+            augment_fn = self._jitter_layer_out
+        elif augment == "shuffle":
+            augment_fn = self._shuffle_layer_out
+        else:
+            augment_fn = augment
+        
+        loss = []
+        acc = []
+
+        self.eval()
+        with torch.no_grad():
+            for i, (x, target) in tqdm.tqdm(enumerate(data)):
+                x = self._forward_first_layer(x)
+                if only_nth_layer == 1:
+                    x = augment_fn(x)
+                
+                x = self._forward_second_layer(x)
+                if only_nth_layer == 2:
+                    x = augment_fn(x)
+                
+                x = self._forward_third_layer(x)
+                if only_nth_layer == 3:
+                    x = augment_fn(x)
+                
+                loss.append(self.lossfn(x, target).item)
+                acc.append(self.acc(x, target))
+
+        return loss, acc
