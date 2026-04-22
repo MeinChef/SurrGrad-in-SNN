@@ -4,7 +4,7 @@ import warnings
 import typing
 import time
 import datetime
-from collections.abc import Callable
+# from collections.abc import Callable
 import gc
 import tqdm
 import re
@@ -12,6 +12,7 @@ import shutil
 import math
 import timeit
 import argparse
+from typing import Literal, Callable
 
 # file handling
 import yaml
