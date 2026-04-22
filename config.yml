@@ -73,3 +73,6 @@ model:
 
   # record hidden layers?
   samples: 10
+
+  # fancy stuff (augmenting the forward pass within the model)
+  move_fraction: 0.3
