@@ -265,8 +265,8 @@ class DataGenerator:
                 # generate sample with self.isis[idx] and self.rates[idx]
                 # this works, because all arrays got flattened
                 sample = self._generate_sample(
-                    isi = self.isis[idx],
-                    rate = self.rates[idx]
+                    isi = int(self.isis[idx]),
+                    rate = int(self.rates[idx])
                 )
 
                 # some debug print statements for roughly checking whether the jittering worked
