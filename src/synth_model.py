@@ -43,6 +43,7 @@ class SynthModel(torch.nn.Module):
             out_features = config["neurons_hidden_1"],
             device = self.device
         )
+        torch.nn.init.xavier_uniform_(self.con1.weight)
         self.neuron1 = snn.Leaky(
             beta = config["neuron_beta"], 
             spike_grad = surrogate, 
@@ -55,6 +56,7 @@ class SynthModel(torch.nn.Module):
             out_features = config["neurons_hidden_2"],
             device = self.device
         )
+        torch.nn.init.xavier_uniform_(self.con2.weight)
         self.neuron2 = snn.Leaky(
             beta = config["neuron_beta"], 
             spike_grad = surrogate,
@@ -67,6 +69,7 @@ class SynthModel(torch.nn.Module):
             out_features = config["neurons_out"],
             device = self.device
         )
+        torch.nn.init.xavier_uniform_(self.con3.weight)
         self.neuron3 = snn.Leaky(
             beta = config["neuron_beta"], 
             spike_grad = surrogate,
@@ -98,12 +101,16 @@ class SynthModel(torch.nn.Module):
         self._out_third = config["neurons_out"]
         self._neurons_out = self._out_third
 
-
+        # predefine output tensor for forward
+        self._forward_output_buffer = None
         self._samples = config["samples"]
         self._build = False
 
         # send to gpu
         self.to(device = self.device)
+
+        # Let cuDNN find optimal algorithms
+        torch.backends.cudnn.benchmark = True  
 
     ####################################
     ### DEFINITION OF MAIN FUNCTIONS ###
@@ -137,7 +144,7 @@ class SynthModel(torch.nn.Module):
         if batch_first:
             # reshape to actually have the time_steps first again
             # that makes the for loop later cleaner
-            x = x.permute(1, 0, -1)
+            x = x.permute(1, 0, -1).contiguous()
 
         # pre-allocate the output-tensor
         out = torch.empty(
@@ -146,8 +153,10 @@ class SynthModel(torch.nn.Module):
                 x.shape[1],
                 self._neurons_out
             ], 
-            device = self.device
+            device = self.device,
+            dtype = x.dtype
         )
+
 
         for step in range(self._time_steps):  
             # layer 1
@@ -162,8 +171,9 @@ class SynthModel(torch.nn.Module):
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
-            out[step] = spk3
+            out[step] = mem3
 
+        print(f"Mean of spikes: {out.mean()}")
         return out
 
     def fit(
@@ -200,14 +210,18 @@ class SynthModel(torch.nn.Module):
                 break
 
             # move tensors to device
-            x = x.to(self.device)
-            target = target.to(self.device)
+            if x.device != self.device:
+                x = x.to(self.device)
+            if target.device != self.device:
+                target = target.to(self.device)
 
             # make prediction
             pred = self.forward(x)
 
             # loss and accuracy calculations
             loss = self.lossfn(pred, target)
+            if loss.isnan().any():
+                print("something's fishy")
             acc = self.acc(pred, target)
 
             # weight update
@@ -219,9 +233,7 @@ class SynthModel(torch.nn.Module):
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
             acc_hist.append(acc)
-        
-        torch.cuda.empty_cache()
-        
+            
         return loss_hist, acc_hist
 
 
@@ -378,7 +390,7 @@ class SynthModel(torch.nn.Module):
             to_move = torch.ceil(spk_mask.sum() * self._move_fraction)
 
             # jumble spikes and select the first to_move ones
-            selected_times = 
+            # selected_times = 
 
         
 
