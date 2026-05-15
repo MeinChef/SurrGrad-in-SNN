@@ -4,10 +4,13 @@ from imports import os
 from imports import torch
 from imports import plt
 from imports import tqdm
+from imports import Sequence
 
-DEBUG = False
+DEBUG: bool = False
+CPU_COUNT: int = os.cpu_count() or 0
 
-class DataGenerator:
+
+class DataGenerator():
     def __init__(
         self,
         time_steps: int,
@@ -17,7 +20,8 @@ class DataGenerator:
         max_isi: int = 10,
         min_rate: int = 5,
         max_rate: int = 20,
-        precision: np.dtype = np.float32
+        only_even: bool = True,
+        precision: type[np.generic] = np.float32
     ):
         """
         Data Generator\n
@@ -49,6 +53,8 @@ class DataGenerator:
         :type min_rate: int, optional
         :param max_rate: Maximum firing rate, defaults to 10
         :type max_rate: int, optional
+        :param only_even: If only even firing rates and ISIs should be created
+        :type only_even: bool, optional
         :param precision: Numpy data type precision for samples, defaults to np.float32
         :type precision: numpy.dtype, optional
         """
@@ -60,20 +66,28 @@ class DataGenerator:
         self._max_isi  = max_isi
         self._min_rate = min_rate
         self._max_rate = max_rate
+        self._only_even = only_even
         self._precision = precision
 
         # create a grid of all possible (isi, rate) pairs
         value_grid = np.meshgrid(
-            np.arange(self._min_isi, self._max_isi + 1),
-            np.arange(self._min_rate, self._max_rate + 1)
+            np.arange(
+                self._min_rate, 
+                stop = self._max_rate + 1,
+                step = 2 if self._only_even else 1
+            ),
+            np.arange(
+                self._min_isi, 
+                stop = self._max_isi + 1,
+                step = 2 if self._only_even else 1
+            ),
         )
+
         # create class assignment matrix (half of the values are class 0, half class 1)
         class_assignment = self._class_assign_matrix(
-            np.zeros_like(
-                value_grid[0],
-                dtype = np.uint8
-            )
+            value_grid
         )
+
         self.isis    = value_grid[0].flatten()
         self.rates   = value_grid[1].flatten()
         self.classes = class_assignment.flatten()
@@ -83,26 +97,48 @@ class DataGenerator:
 
     def _class_assign_matrix(
             self, 
-            arr: np.ndarray
+            # arr: np.ndarray
+            grid: Sequence[np.ndarray]
     ) -> np.ndarray:
         
         """
         Function to create the class-assignment matrix.
         Maps all indices within the matrix to a certain class.
+
         :param arr: Numpy array, with the shape of the value grid that it is being sampled from.
         :type arr: numpy.ndarray, required
         :returns: Numpy array containing the labels for each index.
         :rtype: numpy.ndarray
         """
-        slope = arr.shape[0]/arr.shape[1]
+        X, Y = grid
 
-        # fill the "upper triangle" from [0,0] to [n_rows, n_cols]
-        for i in range(arr.shape[0]):
-            for j in range(arr.shape[1]):
-                # everything that is above or on the slope is class 1
-                # everything below stays class 0.
-                if j >= i * slope:
-                    arr[i, j] = 1
+        arr = np.zeros_like(
+            X,
+            dtype = np.int8
+        )
+
+        # negative slope, like in Figure 1a of https://arxiv.org/pdf/2507.16043
+        slope = (
+            arr.shape[0] * (2/3) - \
+            arr.shape[0] * (1/3)
+        ) / (
+            arr.shape[1]
+        )
+        offset = Y.max() * (1/3)
+
+        # if self._only_even:
+        #     scale = 0.5
+        # else:
+        #     scale = 1
+
+        line = (slope * X + offset)
+
+        # deadzone
+        boundary = np.abs(Y - line) <= 3
+
+        arr[boundary] = -1
+        arr[Y > line + 3] = 1
+
         return arr
     
     def _generate_sample(
@@ -285,7 +321,7 @@ class DataGenerator:
                         print("After jittering:\n" +
                               f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
                               "Expected to match sample sum per neuron.\n" +
-                              f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"
+                              f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"               # type: ignore
                               )
                         
                 # store samples and labels
@@ -305,8 +341,8 @@ class DataGenerator:
         shuffle: bool = True,
         train_split: float = 0.8,
         prefetch: int = 16,
-        workers: int = max(2, os.cpu_count() - 4)
-    ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader] | torch.utils.data.DataLoader:
+        workers: int = max(2, CPU_COUNT - 4)
+    ) -> Sequence[torch.utils.data.DataLoader]:
         
         """
         Generate PyTorch DataLoader(s) from synthetic spike data.\n
@@ -348,7 +384,7 @@ class DataGenerator:
 
         if train_split == 0:
             # and make a nice dataloader out of it
-            loader = torch.utils.data.DataLoader(
+            loader = (torch.utils.data.DataLoader(
                 dataset = ds,
                 batch_size = batch_size,
                 shuffle = shuffle,
@@ -356,7 +392,7 @@ class DataGenerator:
                 num_workers = workers,
                 pin_memory = True,
                 prefetch_factor = prefetch
-            )
+            ),)
         else:
             # split the dataset if specified
             train, test = torch.utils.data.random_split(
@@ -385,8 +421,6 @@ class DataGenerator:
                 prefetch_factor = prefetch
             )
             loader = (train_loader, test_loader)
-
-
         return loader
 
 def vis(

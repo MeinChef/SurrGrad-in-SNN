@@ -2,9 +2,11 @@ from synth_data import DataGenerator
 from synth_model import SynthModel
 from data import load_config, DataHandler
 from misc import check_working_directory
+from visualisation import plot_epoch_losses
 from imports import argparse
 from imports import functional
 from imports import snntorch as snn
+from imports import torch
 
 def main(
     args: argparse.Namespace
@@ -21,6 +23,7 @@ def main(
         max_isi = cfg_data["max_isi"],
         min_rate = cfg_data["min_rate"],
         max_rate = cfg_data["max_rate"],
+        only_even = cfg_data["only_even"]
         # precision = np.float32
     )
 
@@ -59,14 +62,18 @@ def main(
         train_split = 0,
         shuffle = False,
         prefetch = cfg_data["prefetch"],
-    )
+    )[0]
     print("Done!")
 
     print("Training...")
+    trainlist = []
+    evallist = []
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
+
         recorder.disable()
         loss, acc = model.fit(train)
+        trainlist.append(loss)
 
         # handler.plot_loss_accuracy(
         #     loss = loss,
@@ -79,6 +86,7 @@ def main(
         loss, acc = model.evaluate(
             data = test,
         )
+        evallist.append(loss)
 
         # do the recording of the hidden states
         recorder.enable()
@@ -86,12 +94,12 @@ def main(
             data = curated
         )
 
-        rate = handler.measure_tendency()
-        handler.visualise(
-            # recorder = recorder
-        )
-        handler.visualise_tendencies(rate)
-        return 
+        # rate = handler.measure_tendency()
+        # handler.visualise(
+        #     # recorder = recorder
+        # )
+        # handler.visualise_tendencies(rate)
+        # return 
 
         # loss, acc = model.evaluate(
         #     data = curated_test
@@ -119,7 +127,9 @@ def main(
         # )
         recorder.clear_recorded_data()
 
-        
+    plot_epoch_losses(trainlist)
+    plot_epoch_losses(evallist)
+    
     print("Success!")
     return True
     
