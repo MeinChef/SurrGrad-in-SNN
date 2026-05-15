@@ -20,3 +20,4 @@ No optimisation, single threaded: 90s for dataprep, 1 epoch, 50 iterations; GPU 
     - For ce the loss is about 2.3036 for _every single datapoint_
 - During training on the rate data, loss decreases to ~8 until like batch 27, and then jumps to ~38 and stays exactly there
 - Visualize what the network is doing
+- check if tonic (need numpy version <2.0 is actually working with numpy 2.4.4)

@@ -6,19 +6,20 @@ data:
   no_samples: 10000
   jitter: 0.0
   min_isi: 1
-  max_isi: 10
-  min_rate: 5
-  max_rate: 20
+  max_isi: 50
+  min_rate: 2
+  max_rate: 10
+  only_even: True
 
-  batch_size: 128
+  batch_size: 256
   shuffle: True
   train_split: 0.7
   prefetch: 16
 
 model:
   features: *neurons
-  neurons_hidden_1: 1024
-  neurons_hidden_2: 512
+  neurons_hidden_1: 128
+  neurons_hidden_2: 64
   neurons_out: 2
   neuron_beta: 0.8
   time_steps: *time_steps
@@ -47,7 +48,7 @@ model:
   optimiser:
     # available optimisers: adam
     type: "adam" 
-    learning_rate: 0.03
+    learning_rate: 0.0005
     betas: [0.9, 0.99]
 
   surrogate:
@@ -68,8 +69,8 @@ model:
   # training parameters
   epochs: 5
   # partial training/testing in minibatches
-  partial_training: 50
-  partial_testing: 10
+  partial_training: -1
+  partial_testing: -1
 
   # record hidden layers?
   samples: 10
