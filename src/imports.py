@@ -1,10 +1,8 @@
 # useful built-in modules
 import os
 import warnings
-import typing
 import time
 import datetime
-# from collections.abc import Callable
 import gc
 import tqdm
 import re
@@ -12,7 +10,10 @@ import shutil
 import math
 import timeit
 import argparse
-from typing import Literal, Callable
+
+# type annotation
+import typing
+from typing import Literal, Callable, Sequence
 
 # file handling
 import yaml
