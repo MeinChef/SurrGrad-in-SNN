@@ -133,7 +133,7 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
     else:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
 
-def make_path(path: str) -> str | list[str]:
+def make_path(path: str | list[str]) -> os.PathLike:
     '''
     Function for creating cross-os-compatible paths from strings.
     
@@ -150,5 +150,5 @@ def make_path(path: str) -> str | list[str]:
     for part in path:
         part = re.split(r'[/\\]', part)
         path_lst.extend(part)
-    path = os.path.join(*path_lst)
-    return path
+    new_path = os.path.join(*path_lst)
+    return new_path
