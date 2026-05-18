@@ -177,33 +177,52 @@ class DataGenerator():
                 (self.time_steps - isi,), 
                 dtype = bool
             )
+            mask_max_idx = mask.shape[0] - 1
+
+            # save samples somewhere
+            all_samples = np.zeros(
+                (0,),
+                dtype = np.int16
+            )
 
             cur_no = 0
             while cur_no < spk_pairs:
-                # select a random starting position
-                sample = np.flatnonzero(mask)
-                self.rng.shuffle(
-                    sample
-                )
-                sample = sample[0]
-
-                # set value directly in the array
-                out[sample, i] += 1
-                out[sample + isi, i] += 1
-                
-                # check boundaries and handle all cases
-                left = max(sample - isi, 0)
-                right = min(sample + isi + 1, len(mask))
-                # and invalidate the space around the just set pair
-                # to make sure there are no overlaps
-                mask[left:right] = False
-                cur_no += 1
-                
                 # break if no valid positions are left
                 if mask.sum() == 0:
                     print("Warning: Did not generate all spike pairs, no valid positions left")
                     break
 
+
+                # select a bunch of random starting positions
+                sample = np.flatnonzero(mask)
+                self.rng.shuffle(
+                    sample
+                )
+                sample = sample[:spk_pairs - cur_no]
+
+                # sort them if this is the first iteration
+                if len(all_samples) == 0:
+                    sample.sort()
+
+                # put them in the sorted all_samples array
+                idx = np.searchsorted(all_samples, sample)
+                all_samples = np.insert(all_samples, idx, sample)
+                
+                # check if there are any values created that are in invalid positions
+                tmp_mask = np.r_[True, np.diff(all_samples) >= isi]
+                all_samples = all_samples[tmp_mask]
+
+                # update cur_no and mask
+                cur_no = all_samples.shape[0]
+                
+                # hacky way of setting the mask to wrong
+                idx = sample[:,None] + np.arange(isi)
+                mask[idx.clip(max = mask_max_idx)] = False
+        
+                
+            # set samples
+            out[all_samples, i] += 1
+            out[all_samples + isi, i] += 1
         return out
     
     def _jitter(
