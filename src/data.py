@@ -1,4 +1,6 @@
 from imports import yaml
+from imports import Path
+from imports import os
 from imports import datetime
 from imports import functional
 from imports import torch
@@ -279,6 +281,8 @@ class DataHandler():
 
     def visualise_tendencies(
         self,
+        save: bool = True,
+        name_ext: str | None = None,
         blocking: bool = False
     ) -> Figure:
 
@@ -286,20 +290,31 @@ class DataHandler():
             nrows = 4,                              # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
             ncols = len(self._tendencies),          # layers as cols
             squeeze = True,
-            figsize = (5,16),
-            dpi = 50
+            figsize = (16,16),
+            dpi = 100
         )
 
         for i, layer in enumerate(self._tendencies):
-            axes[0, i] = self._plot_spikes(axes[i, 0], layer)
+            axes[0, i] = self._plot_spikes(axes[0, i], layer)
             axes[1, i] = self._plot_rate_heatmap(fig, axes[1, i], layer)
             # axes[2, i] = self._plot_rsync(axes[2, i], layer)
-            axes[3, i] = self._plot_pca_trajectory(axes[2, i], layer)
+            axes[3, i] = self._plot_pca_trajectory(axes[3, i], layer)
         
         
-        plt.tight_layout()
+        fig.tight_layout()
+
+        if save:
+            fig.savefig(
+                os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    "tendencies-" + name_ext if name_ext else self.now
+                ),
+                format = "svg"
+            )
         if blocking:
             plt.show()
+
         return fig
     
 
