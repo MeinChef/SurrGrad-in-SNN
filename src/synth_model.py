@@ -173,7 +173,6 @@ class SynthModel(torch.nn.Module):
 
             out[step] = mem3
 
-        print(f"Mean of spikes: {out.mean()}")
         return out
 
     def fit(
