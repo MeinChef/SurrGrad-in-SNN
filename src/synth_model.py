@@ -485,7 +485,7 @@ class SynthModel(torch.nn.Module):
                     # cry if that did not work    
                     if mask.any():
                         warnings.warn(
-                            "Could not find spot to jitter spike to.\n"
+                            "Could not find spot to jitter spike to. "
                             "This really should not happen, but it did.\n"
                             f"{int(mask.sum())} Spikes will be lost on neuron {n} at Sample {b}"
                         )
@@ -527,6 +527,7 @@ class SynthModel(torch.nn.Module):
                 out[add_idx, b, n] = 1
                 out[remove_idx + left, b, n] = 0
 
+        # TODO: I've lost like 50 spikes in the one run, check why that happened, and what I did wrong
         return out
     
     def _shuffle_layer_out(
