@@ -3,6 +3,7 @@ from imports import math
 from imports import snntorch as snn
 from imports import tqdm
 from imports import Literal, Callable
+from imports import warnings
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
 class SynthModel(torch.nn.Module):
@@ -385,63 +386,224 @@ class SynthModel(torch.nn.Module):
         self, 
         x: torch.Tensor
     ) -> torch.Tensor:
-        raise NotImplementedError()
-    
-    def _shuffle_layer_out(self, x: torch.Tensor) -> torch.Tensor:
         T, B, N = x.shape
+        out = x.clone()
+        left = 0
 
         for b in range(B):
             for n in range(N):
-
                 # existing spikes
                 spike_idx = torch.where(x[:, b, n] > 0)[0]
+                # valid_to needs to be calculated from out, since out might change in size
+                valid_to = torch.where(out[:, b, n] == 0)[0]
 
-                n_move = math.ceil(
+                to_move = math.ceil(
                     spike_idx.numel() * self._move_fraction
                 )
 
-                if n_move == 0:
+                if to_move == 0:
+                    continue
+
+                # randomly choose spikes to remove
+                remove_idx = spike_idx[
+                    torch.randperm(spike_idx.numel(), device = self.device)[:to_move]
+                ]
+                # and add these to the valid positions
+                # the +left because they need to be in the same coordinate system as valid_to
+                valid_to = torch.cat(
+                    [valid_to, remove_idx + left] 
+                )
+                
+                jitters = torch.randint(
+                    low = -self._jitter,
+                    high = self._jitter + 1,
+                    size = (to_move,),
+                    device = self.device
+                )
+
+                # this might lead to two or more spikes to be on the same time
+                candidates = remove_idx + jitters
+                
+                # thus we check if they collide with existing spikes 
+                # (excluding the ones that'll be removed)
+                def check_candidates(candy: torch.Tensor) -> torch.Tensor:
+                    # collision with existing spikes
+                    # the +left translates again into the valid_to coordinate system
+                    collide = ~torch.isin(candy + left, valid_to)   
+                    
+                    # duplicate values
+                    unique, counts = candy.unique(return_counts = True)
+                    duplicate = unique[counts > 1]
+                    duplicate = torch.isin(candy, duplicate)
+                    
+                    return collide | duplicate
+
+                mask = check_candidates(candidates)
+                
+                if mask.any():
+                    counter = 0
+                    while mask.any() and counter < 100:
+                        # update valid_to - here and not earlier, because it might not be needed
+                        valid_to = valid_to[
+                            ~torch.isin(valid_to, candidates[~mask] + left)
+                        ]
+
+                        # create as many new values as there are True filter values 
+                        jitters = torch.randint(
+                            low = -self._jitter,
+                            high = self._jitter + 1,
+                            size = (int(mask.sum()),),
+                            device = self.device
+                        )
+
+                        # update candidates and afterwards the filter
+                        candidates[mask] = remove_idx[mask] + jitters
+                        mask = check_candidates(candidates)
+                        
+                        # increase counter
+                        counter += 1
+
+                    # if the searching was unsuccessful, brute-force the first free spot
+                    if mask.any():
+                        for i in torch.where(mask)[0]:
+                            for j in range(-self._jitter, self._jitter + 1):
+                                if ((valid_to == remove_idx[i] + j + left).any()):
+                                    chosen = remove_idx[i] + j
+                                    
+                                    # update valid_to (translate again with +left)
+                                    valid_to = valid_to[
+                                        valid_to != chosen +left
+                                    ]
+                                    
+                                    # and set it
+                                    candidates[i] = chosen
+                                    break
+                        mask = check_candidates(candidates)
+
+                                
+
+                    # cry if that did not work    
+                    if mask.any():
+                        warnings.warn(
+                            "Could not find spot to jitter spike to.\n"
+                            "This really should not happen, but it did.\n"
+                            f"{int(mask.sum())} Spikes will be lost on neuron {n} at Sample {b}"
+                        )
+
+
+                # make time longer if any spikes would now be out of time
+                if (candidates < -left).any():
+                    needed_left = -int(candidates.min())
+                    new_left = max(left, needed_left)
+
+                    out = torch.nn.functional.pad(
+                        out,
+                        (
+                            0, 0,                   # last dim
+                            0, 0,                   # middle dim
+                            new_left - left, 0,     # first dim
+                        )
+                    )
+
+                    # update left
+                    left = new_left
+
+                # and update the candidates to be in the correct coordinate system
+                add_idx = candidates + left
+
+                if (add_idx >= out.shape[0]).any():
+                    need = int(add_idx.max() + 1)
+                    out = torch.nn.functional.pad(
+                        out,
+                        (
+                            0, 0,
+                            0, 0,
+                            0, need - out.shape[0],
+                        )
+                    )
+ 
+                
+                # write to tensor
+                out[add_idx, b, n] = 1
+                out[remove_idx + left, b, n] = 0
+
+        return out
+    
+    def _shuffle_layer_out(
+        self, x: torch.Tensor
+    ) -> torch.Tensor:
+        T, B, N = x.shape
+        out = x.clone()
+
+        for b in range(B):
+            for n in range(N):
+                # existing spikes
+                spike_idx = torch.where(x[:, b, n] > 0)[0]
+
+                to_move = math.ceil(
+                    spike_idx.numel() * self._move_fraction
+                )
+
+                if to_move == 0:
                     continue
 
                 # available empty positions
                 empty_idx = torch.where(x[:, b, n] == 0)[0]
 
-                if empty_idx.numel() < n_move:
-                    n_move = empty_idx.numel()
+                if empty_idx.numel() < to_move:
+                    to_move = empty_idx.numel()
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
-                    torch.randperm(spike_idx.numel(), device = self.device)[:n_move]
+                    torch.randperm(spike_idx.numel(), device = self.device)[:to_move]
                 ]
 
                 # randomly choose empty positions to activate
                 add_idx = empty_idx[
-                    torch.randperm(empty_idx.numel(), device = self.device)[:n_move]
+                    torch.randperm(empty_idx.numel(), device = self.device)[:to_move]
                 ]
 
-                x[remove_idx, b, n] = 0
-                x[add_idx, b, n] = 1
+                # write to tensor
+                out[remove_idx, b, n] = 0
+                out[add_idx, b, n] = 1
 
-        return x
+        return out
     
-
-
-    def augmented_forward(
+    def augmented_eval(
         self,
         data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
         augment: Literal["shuffle", "jitter"] | Callable = "jitter",                    # noqa: F821
+        jitter: int | None = None,
         only_nth_layer: int | None = None
     ) -> tuple[list, list]:
         
         if augment != "jitter" and augment != "shuffle" and callable(augment):
-            raise ValueError(f"Expected 'shuffle' or 'jitter'. Got '{augment}' (Type: {type(augment)}) instead.")
+            raise ValueError("Expected 'shuffle' or 'jitter'.\n"
+                             f"Got '{augment}' (Type: {type(augment)}) instead.")
         
+        if self._move_fraction <= 0:
+            self._move_fraction = 0
+            warnings.warn(
+                "This function got called with a move_fraction of 0 or less.\n"
+                "This will result in a very inefficient forward pass."
+                "If this is not intended, change the move_fraction value in 'config.yml'.",
+                category = RuntimeWarning
+            )
+
         if augment == "jitter":
             augment_fn = self._jitter_layer_out
+            if jitter and jitter > 0:
+                self._jitter = jitter
+            else:
+                raise ValueError("Expected the parameter 'jitter' to be int and positive.\n"
+                                 f"Got {jitter} of {type(jitter)} instead.")
+            
         elif augment == "shuffle":
             augment_fn = self._shuffle_layer_out
+
         else:
             augment_fn = augment
+
         
         loss = []
         acc = []
