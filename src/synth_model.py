@@ -100,6 +100,7 @@ class SynthModel(torch.nn.Module):
         self._in_third = self._out_second
         self._out_third = config["neurons_out"]
         self._neurons_out = self._out_third
+        self._return_spk = config["return_spk"]
 
         # predefine output tensor for forward
         self._forward_output_buffer = None
@@ -171,7 +172,10 @@ class SynthModel(torch.nn.Module):
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
-            out[step] = mem3
+            if self._return_spk:
+                out[step] = spk3
+            else:
+                out[step] = mem3
 
         return out
 
@@ -202,6 +206,9 @@ class SynthModel(torch.nn.Module):
         # set model in training mode
         self.train()
 
+        # just try and see what happens
+        # x, train = next(iter(data))
+
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
             # check if the training has been already done to the specified amount
@@ -215,7 +222,7 @@ class SynthModel(torch.nn.Module):
                 target = target.to(self.device)
 
             # make prediction
-            pred = self.forward(x)
+            pred = self.forward(x, batch_first = False)
 
             # loss and accuracy calculations
             loss = self.lossfn(pred, target)
@@ -276,7 +283,7 @@ class SynthModel(torch.nn.Module):
                 x = x.to(self.device)
                 target = target.to(self.device)
 
-                pred = self.forward(x)
+                pred = self.forward(x, batch_first = False)
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
@@ -290,6 +297,10 @@ class SynthModel(torch.nn.Module):
         torch.cuda.empty_cache()
         
         return loss_hist, acc_hist
+
+    #########################
+    ### Augmented Forward ###
+    #########################
 
     def _forward_first_layer(
         self,
@@ -350,7 +361,7 @@ class SynthModel(torch.nn.Module):
         mem = self.neuron1.reset_mem()
 
         # pre-allocate the output-tensor
-        out = torch.zeros(
+        out = torch.empty(
             [
                 self._time_steps,
                 x.shape[1],             # batch size
@@ -362,7 +373,10 @@ class SynthModel(torch.nn.Module):
         # loop over time
         for step in range(self._time_steps):
             cur = self.con3(x[step])
-            out[step], mem = self.neuron3(cur, mem)
+            if self._return_spk:
+                _, out[step] = self.neuron3(cur, mem)
+            else:
+                out[step], _ = self.neuron3(cur, mem)
 
         return out
     
@@ -377,21 +391,32 @@ class SynthModel(torch.nn.Module):
         x: torch.Tensor
     ) -> torch.Tensor:
         
-        raise NotImplementedError()
+        out = x.clone()
         # get indices where spikes are, and where they aren't
-        spikes = x.nonzero()
+        spikes = x.nonzero() # shape: spikes, 3 (one col for time, sample in batch, neuron)
         valid_to = torch.nonzero(x == 0)
 
-        for neuron in range(x.shape[1]):
-            # create mask for each neuron
-            spk_mask = spikes[1] == neuron
-            move_mask = valid_to[1] == neuron
-            to_move = torch.ceil(spk_mask.sum() * self._move_fraction)
+        for sample in range(x.shape[1]):
+            to_spk = valid_to[torch.where(valid_to[:,1] == sample)]
+            to_rm = spikes[torch.where(spikes[:,1] == sample)]
 
-            # jumble spikes and select the first to_move ones
-            # selected_times = 
+            for neuron in range(x.shape[2]):
+                to_move = torch.ceil(x[:, sample, neuron].sum() * self._move_fraction)
+                
+                # get valid positions for neuron, shuffle and select the first couple
+                # to simulate random picking
+                new_spk = to_spk[torch.where(to_spk[:,2] == neuron)]
+                new_spk = new_spk[torch.randperm(new_spk.shape[0])]
+                new_spk = new_spk[:to_move]
+                out[new_spk] = 1
 
+                # and remove the old spikes
+                old_spk = to_rm[torch.where(to_rm[:,2] == neuron)]
+                old_spk = old_spk[torch.randperm(old_spk.shape[0])]
+                old_spk = old_spk[:to_move]
+                out[old_spk] = 0
         
+        return out
 
 
     def augmented_forward(
@@ -417,6 +442,13 @@ class SynthModel(torch.nn.Module):
         self.eval()
         with torch.no_grad():
             for i, (x, target) in tqdm.tqdm(enumerate(data)):
+
+                # move tensors to device
+                if x.device != self.device:
+                    x = x.to(self.device)
+                if target.device != self.device:
+                    target = target.to(self.device)
+
                 x = self._forward_first_layer(x)
                 if only_nth_layer == 1:
                     x = augment_fn(x)

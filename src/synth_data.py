@@ -401,6 +401,15 @@ class DataGenerator():
             torch.from_numpy(labels.astype(np.int64))
         )
 
+        # function for returning the batches with time_first
+        def _time_first_batch(batch):
+            xs, ys = zip(*batch)
+
+            xs = torch.stack(xs).permute(1, 0, -1).contiguous()
+            ys = torch.stack(ys)
+
+            return xs, ys
+
         if train_split == 0:
             # and make a nice dataloader out of it
             loader = (torch.utils.data.DataLoader(
@@ -410,7 +419,9 @@ class DataGenerator():
                 drop_last = True,
                 num_workers = workers,
                 pin_memory = True,
-                prefetch_factor = prefetch
+                prefetch_factor = prefetch,
+                in_order = False,
+                collate_fn = _time_first_batch
             ),)
         else:
             # split the dataset if specified
@@ -428,7 +439,10 @@ class DataGenerator():
                 drop_last = True,
                 num_workers = workers,
                 pin_memory = True,
-                prefetch_factor = prefetch
+                prefetch_factor = prefetch,
+                in_order = False,
+                collate_fn = _time_first_batch
+
             )
             test_loader = torch.utils.data.DataLoader(
                 dataset = test,
@@ -437,7 +451,9 @@ class DataGenerator():
                 drop_last = True,
                 num_workers = workers,
                 pin_memory = True,
-                prefetch_factor = prefetch
+                prefetch_factor = prefetch,
+                in_order = False,
+                collate_fn = _time_first_batch
             )
             loader = (train_loader, test_loader)
         return loader
