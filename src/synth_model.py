@@ -1,4 +1,5 @@
 from imports import torch
+from imports import math
 from imports import snntorch as snn
 from imports import tqdm
 from imports import Literal, Callable
@@ -386,37 +387,43 @@ class SynthModel(torch.nn.Module):
     ) -> torch.Tensor:
         raise NotImplementedError()
     
-    def _shuffle_layer_out(
-        self, 
-        x: torch.Tensor
-    ) -> torch.Tensor:
-        
-        out = x.clone()
-        # get indices where spikes are, and where they aren't
-        spikes = x.nonzero() # shape: spikes, 3 (one col for time, sample in batch, neuron)
-        valid_to = torch.nonzero(x == 0)
+    def _shuffle_layer_out(self, x: torch.Tensor) -> torch.Tensor:
+        T, B, N = x.shape
 
-        for sample in range(x.shape[1]):
-            to_spk = valid_to[torch.where(valid_to[:,1] == sample)]
-            to_rm = spikes[torch.where(spikes[:,1] == sample)]
+        for b in range(B):
+            for n in range(N):
 
-            for neuron in range(x.shape[2]):
-                to_move = torch.ceil(x[:, sample, neuron].sum() * self._move_fraction)
-                
-                # get valid positions for neuron, shuffle and select the first couple
-                # to simulate random picking
-                new_spk = to_spk[torch.where(to_spk[:,2] == neuron)]
-                new_spk = new_spk[torch.randperm(new_spk.shape[0])]
-                new_spk = new_spk[:to_move]
-                out[new_spk] = 1
+                # existing spikes
+                spike_idx = torch.where(x[:, b, n] > 0)[0]
 
-                # and remove the old spikes
-                old_spk = to_rm[torch.where(to_rm[:,2] == neuron)]
-                old_spk = old_spk[torch.randperm(old_spk.shape[0])]
-                old_spk = old_spk[:to_move]
-                out[old_spk] = 0
-        
-        return out
+                n_move = math.ceil(
+                    spike_idx.numel() * self._move_fraction
+                )
+
+                if n_move == 0:
+                    continue
+
+                # available empty positions
+                empty_idx = torch.where(x[:, b, n] == 0)[0]
+
+                if empty_idx.numel() < n_move:
+                    n_move = empty_idx.numel()
+
+                # randomly choose spikes to remove
+                remove_idx = spike_idx[
+                    torch.randperm(spike_idx.numel(), device = self.device)[:n_move]
+                ]
+
+                # randomly choose empty positions to activate
+                add_idx = empty_idx[
+                    torch.randperm(empty_idx.numel(), device = self.device)[:n_move]
+                ]
+
+                x[remove_idx, b, n] = 0
+                x[add_idx, b, n] = 1
+
+        return x
+    
 
 
     def augmented_forward(
