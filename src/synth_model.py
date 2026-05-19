@@ -440,9 +440,9 @@ class SynthModel(torch.nn.Module):
 
                 mask = check_candidates(candidates)
                 
-                if mask.any():
+                if ~mask.any():
                     counter = 0
-                    while mask.any() and counter < 100:
+                    while ~mask.any() and counter < 100:
                         # update valid_to - here and not earlier, because it might not be needed
                         valid_to = valid_to[
                             ~torch.isin(valid_to, candidates[~mask] + left)
@@ -464,7 +464,7 @@ class SynthModel(torch.nn.Module):
                         counter += 1
 
                     # if the searching was unsuccessful, brute-force the first free spot
-                    if mask.any():
+                    if ~mask.any():
                         for i in torch.where(mask)[0]:
                             for j in range(-self._jitter, self._jitter + 1):
                                 if ((valid_to == remove_idx[i] + j + left).any()):
@@ -480,15 +480,14 @@ class SynthModel(torch.nn.Module):
                                     break
                         mask = check_candidates(candidates)
 
-                                
-
                     # cry if that did not work    
-                    if mask.any():
+                    if ~mask.any():
                         warnings.warn(
                             "Could not find spot to jitter spike to. "
                             "This really should not happen, but it did.\n"
                             f"{int(mask.sum())} Spikes will be lost on neuron {n} at Sample {b}"
                         )
+                        candidates = candidates[mask]
 
 
                 # make time longer if any spikes would now be out of time
@@ -527,7 +526,6 @@ class SynthModel(torch.nn.Module):
                 out[add_idx, b, n] = 1
                 out[remove_idx + left, b, n] = 0
 
-        # TODO: I've lost like 50 spikes in the one run, check why that happened, and what I did wrong
         return out
     
     def _shuffle_layer_out(
