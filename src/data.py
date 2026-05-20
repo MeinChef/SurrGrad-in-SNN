@@ -11,7 +11,17 @@ from imports import PCA
 from synth_model import SynthModel
 
 # load the config.yml
-def load_config(path: str = "config.yml") -> tuple[dict, dict]:
+def load_config(
+        path: str | None = None
+) -> tuple[dict, dict]:
+    
+    # load default config located at ../config.yml
+    if path is None:
+        path = os.path.join(
+            Path(__file__).parent.parent,
+            "config.yml"
+        )
+
     with open(path, "r") as file:
         configs = yaml.safe_load(file)
 
