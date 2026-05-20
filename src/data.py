@@ -8,7 +8,7 @@ from imports import plt
 from imports import Figure, Axes
 from imports import cm
 from imports import PCA
-
+from synth_model import SynthModel
 
 # load the config.yml
 def load_config(path: str = "config.yml") -> tuple[dict, dict]:
@@ -16,6 +16,75 @@ def load_config(path: str = "config.yml") -> tuple[dict, dict]:
         configs = yaml.safe_load(file)
 
     return configs["data"], configs["model"]
+
+NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".pt"
+
+def save_model(
+    model: SynthModel,
+    identifier: str | None = None,
+) -> None:
+    
+    if identifier is None:
+        identifier = NOW
+
+    if "." not in identifier:
+        raise ValueError(
+            "Expected file extentsion. Try again with a '.fileextension'."
+        )
+    
+    os.makedirs(
+        os.path.join(
+            Path(__file__).parent.parent,
+            "model"
+        ),
+        exist_ok = True
+    )
+
+    torch.save(
+        model.state_dict(),
+        os.path.join(
+            Path(__file__).parent.parent,
+            "model",
+            "syntmodel-" + identifier
+        )
+    )
+
+
+def load_model(
+    identifier: str | None = None,
+) -> SynthModel:
+    
+    if identifier is None:
+        identifier = NOW
+
+    if "." not in identifier:
+        raise ValueError(
+            "Expected file extentsion. Try again with a '.fileextension'."
+        )
+    
+
+    # load config
+    _, cfg = load_config(
+        os.path.join(
+            Path(__file__).parent.parent,
+            "config.yml"
+        )
+    )
+    
+    # load model
+    model = SynthModel(cfg)
+    model.load_state_dict(
+        torch.load(
+            os.path.join(
+                Path(__file__).parent.parent,
+                "model",
+                "syntmodel-" + identifier
+            )
+        )
+    )
+
+    model.eval()
+    return model
 
 class DataHandler():
     def __init__(
