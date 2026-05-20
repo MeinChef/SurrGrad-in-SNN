@@ -440,6 +440,8 @@ class SynthModel(torch.nn.Module):
 
                 mask = check_candidates(candidates)
                 
+                # mask is a positive mask, meaning True values are acceptable.
+                # negating the mask allows for checking if any values are not acceptable
                 if ~mask.any():
                     counter = 0
                     while ~mask.any() and counter < 100:
@@ -485,7 +487,7 @@ class SynthModel(torch.nn.Module):
                         warnings.warn(
                             "Could not find spot to jitter spike to. "
                             "This really should not happen, but it did.\n"
-                            f"{int(mask.sum())} Spikes will be lost on neuron {n} at Sample {b}"
+                            f"{int(~mask.sum())} Spike(s) will be lost on neuron {n} at Sample {b}"
                         )
                         candidates = candidates[mask]
 
