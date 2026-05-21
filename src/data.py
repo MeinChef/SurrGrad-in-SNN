@@ -49,16 +49,17 @@ def save_model(
         ),
         exist_ok = True
     )
-
+    modelpath = os.path.join(
+        Path(__file__).parent.parent,
+        "model",
+        "syntmodel-" + identifier
+    )
     torch.save(
         model.state_dict(),
-        os.path.join(
-            Path(__file__).parent.parent,
-            "model",
-            "syntmodel-" + identifier
-        )
+        modelpath
     )
 
+    print("Saved model to: " + modelpath)
 
 def load_model(
     identifier: str | None = None,
@@ -111,45 +112,50 @@ class DataHandler():
 
 
     def measure_tendencies(
-        self
+        self,
+        data: torch.utils.data.DataLoader
     ) -> dict:
-
-        measurements = {}
-
-        for layer in self.recorder.monitored_layers:
-            # create tensor from recording
-            layerlist = self.recorder[layer][:self.time_steps]
-            # only interested in spikes and first sample
-            #               first sample   membrane potentials
-            #                       |    spikes |
-            #                       |        |  |
-            spikes = torch.stack([x[0,:] for x, _ in layerlist]).T
-            
-            # calculate the average isi, synchrony
-            measurements[layer] = {
-                "spikes": spikes,
-                "rates": spikes.sum(1),
-                "smoothed_rates": self.measure_rate(spikes),
-                "rsync": self.measure_rsync(spikes),
-                "isis": self.measure_isis(spikes)
-            }
-            # for neuron in range(spikes.shape[0]):
-            #     returnvalue = self.measure_rate(spikes[neuron])
-            #     if returnvalue:
-            #         tmp_rate.append(returnvalue["no_spk"])              # type: ignore
-            #     else:
-            #         tmp_rate.append(torch.tensor([0]))
-            #     # self.measure_latency()
-            # rate.append(torch.tensor(tmp_rate))
         
-        self._tendencies = measurements
-        return measurements
+        all_measure = {}
+        
+        # assuming only one batch, since that's the cleanest way
+        _, label = next(iter(data))
+        for n, cls in enumerate(label):
+            
+            all_measure[f"sample-{n}"] = {}
+            all_measure[f"sample-{n}"]["measurements"] = {}
+            all_measure[f"sample-{n}"]["class"] = cls
+
+            for layer in self.recorder.monitored_layers:
+                # create tensor from recording
+                layerlist = self.recorder[layer][:self.time_steps]
+                # only interested in spikes and first sample
+                #               first sample   membrane potentials
+                #                       |    spikes |
+                #                       |        |  |
+                spikes = torch.stack([x[n,:] for x, _ in layerlist]).T
+                
+                # calculate the average isi, synchrony
+                all_measure[f"sample-{n}"]["measurements"][layer] = {
+                    "spikes": spikes,
+                    "neurons": spikes.shape[0],
+                    "rates": spikes.sum(1),
+                    "smoothed_rates": self.measure_rate(spikes),
+                    "rsync": self.measure_rsync(spikes),
+                    "isis": self.measure_isis(spikes)
+                }
+
+        self._tendencies = all_measure
+        return all_measure
 
     def measure_isis(
         self,
         spikes: torch.Tensor
     ) -> torch.Tensor:
         
+        if spikes.device != "cpu":
+            spikes = spikes.to(torch.device('cpu'))
+
         if spikes.isnan().any():
             raise ValueError(
                 "Some Value in the Spike-Train is nan.\n" + 
@@ -171,8 +177,38 @@ class DataHandler():
             mask = spk_neuron[spk_neuron == neuron]
             # calculates the "forward difference", so N+1 - N
             isis.append(torch.diff(spk_times[mask]))
+
         
-        return torch.nested.nested_tensor(isis, layout = torch.jagged)
+        try:
+            # this did at some point _once_ raise a cuda assertion error. IDK why.
+            # /pytorch/aten/src/ATen/native/cuda/IndexKernel.cu:111: operator(): block: [0,0,0], thread: [0,0,0] Assertion `-sizes[i] <= index && index < sizes[i] && "index out of bounds"` failed.
+            # Traceback (most recent call last):
+            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/test.py", line 84, in <module>
+            #     main()
+            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/test.py", line 78, in main
+            #     handler.measure_tendencies()
+            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/data.py", line 135, in measure_tendencies
+            #     "isis": self.measure_isis(spikes)
+            #             ^^^^^^^^^^^^^^^^^^^^^^^^^
+            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/data.py", line 176, in measure_isis
+            #     return torch.nested.nested_tensor(isis, layout = torch.jagged)
+            #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            #   File "/home/user/miniconda3/envs/snn/lib/python3.12/site-packages/torch/nested/__init__.py", line 272, in nested_tensor
+            #     nt, _ = jagged_from_list(
+            #             ^^^^^^^^^^^^^^^^^
+            #   File "/home/user/miniconda3/envs/snn/lib/python3.12/site-packages/torch/nested/_internal/nested_tensor.py", line 522, in jagged_from_list
+            #     torch.tensor(
+            # torch.AcceleratorError: CUDA error: device-side assert triggered
+            # 
+            # IF error is triggered: isis are two empty tensors
+            # I think this should be resolved by the spikes.to("cpu") earlier
+
+            out = torch.nested.nested_tensor(isis, layout = torch.jagged)
+        except Exception as e:
+            out = torch.tensor([0])
+            breakpoint()
+        
+        return out
 
     def measure_rate(
         self,
@@ -363,58 +399,83 @@ class DataHandler():
         save: bool = True,
         name_ext: str | None = None,
         blocking: bool = False
-    ) -> Figure:
-
-        fig, axes = plt.subplots(
-            nrows = 4,                              # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
-            ncols = len(self._tendencies),          # layers as cols
-            squeeze = True,
-            figsize = (16,16),
-            dpi = 100
-        )
-
-        for i, layer in enumerate(self._tendencies):
-            axes[0, i] = self._plot_spikes(axes[0, i], layer)
-            axes[1, i] = self._plot_rate_heatmap(fig, axes[1, i], layer)
-            # axes[2, i] = self._plot_rsync(axes[2, i], layer)
-            axes[3, i] = self._plot_pca_trajectory(axes[3, i], layer)
-        
-        
-        fig.tight_layout()
+    ) -> list[Figure]:
+        figlist = []
 
         if save:
-            fig.savefig(
+            os.makedirs(
                 os.path.join(
                     Path(__file__).parent.parent,
                     "img",
-                    "tendencies-" + name_ext if name_ext else self.now
+                    self.now
                 ),
-                format = "svg"
+                exist_ok = True
             )
+
+        for key in self._tendencies.keys():
+            measurements = self._tendencies[key]["measurements"]
+
+            fig, axes = plt.subplots(
+                nrows = 2,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                ncols = len(measurements),  # layers as cols
+                squeeze = True,
+                figsize = (16,8),
+                dpi = 100
+            )
+
+            for i, layer in enumerate(measurements):
+                axes[0, i] = self._plot_spikes(axes[0, i], measurements[layer])
+                axes[1, i] = self._plot_rate_heatmap(fig, axes[1, i], measurements[layer])
+                # axes[2, i] = self._plot_rsync(axes[2, i], measurements[layer])
+                # axes[2, i] = self._plot_pca_trajectory(axes[2, i], measurements[layer])
+        
+            fig.suptitle(
+                f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
+            )
+            fig.tight_layout()
+
+            if save:
+                fig.savefig(
+                    os.path.join(
+                        Path(__file__).parent.parent,
+                        "img",
+                        self.now,
+                        "tendencies-" + 
+                        name_ext if name_ext else self.now + 
+                        "-" +
+                        key + 
+                        ".svg"
+                    ),
+                    format = "svg"
+                )
+
+
         if blocking:
             plt.show()
 
-        return fig
+        return figlist
     
 
     def _plot_spikes(
         self,
         axes: Axes,
-        layer: str = "neuron1"
+        data: dict
     ) -> Axes:
 
         axes.scatter(
             *torch.nonzero(
-                self._tendencies[layer]["spikes"].cpu().T,
+                data["spikes"].cpu().T,
                 as_tuple = True
             ),
             s = 1.5,
             c = "black"
         )
 
-        axes.set_xlabel("Time")
+        axes.set_xlabel("Time (ms)")
+        axes.set_xlim(0, self.time_steps)
         axes.set_ylabel("Neurons")
-        axes.set_title("Spikes")
+        axes.set_ylim(0, data["neurons"])
+        axes.set_title(f"Spikes - RSync of {data["rsync"]}")
 
         return axes
 
@@ -422,11 +483,11 @@ class DataHandler():
         self,
         fig: Figure,
         axes: Axes,
-        layer: str,
+        data: dict,
         dt = 0.001
     ) -> Axes:
 
-        rates = self._tendencies[layer]["smoothed_rates"].cpu().numpy()
+        rates = data["smoothed_rates"].cpu().numpy()
 
         cmap = cm.get_cmap("viridis")
         im = axes.imshow(
@@ -434,7 +495,7 @@ class DataHandler():
             aspect = 'auto',
             origin = 'lower',
             cmap = cmap,
-            extent = (0, rates.shape[1] * dt, 0, rates.shape[0])
+            # extent = (0, rates.shape[1] * dt, 0, rates.shape[0])
         )
 
         fig.colorbar(
@@ -442,7 +503,8 @@ class DataHandler():
             ax = axes,
             label = 'Firing rate (Hz)'
         )
-        axes.set_xlabel('Time (s)')
+        axes.set_xlabel('Time (ms)')
+        axes.set_xlim(0, self.time_steps)
         axes.set_ylabel('Neuron')
         axes.set_title('Instantaneous firing rates')
 
@@ -460,11 +522,11 @@ class DataHandler():
     def _plot_pca_trajectory(
         self,
         axes: Axes,
-        layer: str = "neuron1"
+        data: dict
     ) -> Axes:
 
         # shape: [neurons, time]
-        X = self._tendencies[layer]["smoothed_rates"].cpu().numpy().T
+        X = data["smoothed_rates"].cpu().numpy().T
 
         pca = PCA(n_components = 2)
         X_pca = pca.fit_transform(X)
