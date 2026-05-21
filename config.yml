@@ -23,6 +23,7 @@ model:
   neurons_out: 2
   neuron_beta: 0.8
   time_steps: *time_steps
+  return_spk: False
 
   # hyperparameters
   loss:
