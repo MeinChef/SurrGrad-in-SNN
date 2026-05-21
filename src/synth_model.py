@@ -93,6 +93,7 @@ class SynthModel(torch.nn.Module):
         self._partial_train = config["partial_training"]
         self._partial_test  = config["partial_testing"]
         self._move_fraction = config["move_fraction"]
+        self._best_loss = torch.inf
 
         # neuron features
         self._in_first = config["features"]["val"]
@@ -295,7 +296,12 @@ class SynthModel(torch.nn.Module):
                 # TODO: dump list regularly to file
                 loss_hist.append(loss.item())
                 acc_hist.append(acc)
-            
+        
+        # update best loss
+        self._best_loss = min(
+            self._best_loss,
+            torch.tensor(loss_hist).mean()
+        )
         torch.cuda.empty_cache()
         
         return loss_hist, acc_hist
