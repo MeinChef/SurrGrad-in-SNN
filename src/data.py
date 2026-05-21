@@ -174,10 +174,9 @@ class DataHandler():
         # over spikes.shape[0], because not every neuron neccessarily spikes
         for neuron in range(spikes.shape[0]):
             # only select relevant neurons, still works if mask is empty
-            mask = spk_neuron[spk_neuron == neuron]
+            mask = torch.where(spk_neuron == neuron)[0]
             # calculates the "forward difference", so N+1 - N
             isis.append(torch.diff(spk_times[mask]))
-
         
         try:
             # this did at some point _once_ raise a cuda assertion error. IDK why.
@@ -416,7 +415,7 @@ class DataHandler():
             measurements = self._tendencies[key]["measurements"]
 
             fig, axes = plt.subplots(
-                nrows = 2,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                nrows = 3,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
                 ncols = len(measurements),  # layers as cols
                 squeeze = True,
                 figsize = (16,8),
@@ -426,7 +425,7 @@ class DataHandler():
             for i, layer in enumerate(measurements):
                 axes[0, i] = self._plot_spikes(axes[0, i], measurements[layer])
                 axes[1, i] = self._plot_rate_heatmap(fig, axes[1, i], measurements[layer])
-                # axes[2, i] = self._plot_rsync(axes[2, i], measurements[layer])
+                axes[2, i] = self._plot_isis(axes[2, i], measurements[layer])
                 # axes[2, i] = self._plot_pca_trajectory(axes[2, i], measurements[layer])
         
             fig.suptitle(
@@ -510,14 +509,35 @@ class DataHandler():
 
         return axes
     
-    # def _plot_rsync(
-    #     self,
-    #     axes: Axes,
-    #     layer: str = "neuron1"
-    # ) -> Axes:
-    #     # doing this is kinda stupid, since there is only one value per layer
-    #     rsync = self._tendencies[layer]["rsync"]
-    #     return axes
+    def _plot_isis(
+        self,
+        axes: Axes,
+        data: dict
+    ) -> Axes:
+        # doing this is kinda stupid, since there is only one value per layer
+        # breakpoint()
+
+        data_clean = torch.nested.to_padded_tensor(
+            data["isis"],
+            padding = 0
+        ).to(torch.float)
+
+        data_hist = torch.histc(
+            input = data_clean,
+            bins = 100,
+            min = 1,
+            max = max(2, data_clean.amax())
+        ).numpy()
+        breakpoint()
+        axes.stairs(
+            values = data_hist,
+            fill = True
+        )
+        axes.set_xlabel("Bins")
+        axes.set_ylabel("Counts")
+        axes.set_title("Histogram of ISIs")
+
+        return axes
 
     def _plot_pca_trajectory(
         self,
