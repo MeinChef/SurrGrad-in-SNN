@@ -52,7 +52,7 @@ def save_model(
     modelpath = os.path.join(
         Path(__file__).parent.parent,
         "model",
-        "syntmodel-" + identifier
+        "synthmodel-" + identifier
     )
     torch.save(
         model.state_dict(),
@@ -89,7 +89,7 @@ def load_model(
             os.path.join(
                 Path(__file__).parent.parent,
                 "model",
-                "syntmodel-" + identifier
+                "synthmodel-" + identifier
             )
         )
     )
