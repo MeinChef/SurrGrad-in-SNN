@@ -4,7 +4,9 @@ from imports import os
 from imports import torch
 from imports import plt
 from imports import tqdm
+from imports import Path
 from imports import Sequence
+from imports import Figure
 
 DEBUG: bool = False
 CPU_COUNT: int = os.cpu_count() or 0
@@ -457,6 +459,89 @@ class DataGenerator():
             )
             loader = (train_loader, test_loader)
         return loader
+    
+    def visualise_classes(
+        self,
+        save: bool = True
+    ) -> Figure:
+
+        cls = 1
+        isi = 32
+        rate = 4
+
+        # fixed sample:
+        sample = self._generate_sample(
+            isi = isi,
+            rate = rate
+        )
+        jittered_sample = self._jitter(
+            sample.copy()
+        )
+
+        fig, axes = plt.subplot_mosaic(
+            mosaic = [
+                ["classes", "spikes"],
+                ["classes", "jittered"]
+            ],
+            figsize = (12,6),
+            dpi = 200,
+            height_ratios = [1,1],
+            width_ratios = [2,5]
+        )
+
+        mask = (self.classes != -1).nonzero()
+        scatter = axes["classes"].scatter(
+            x = self.isis[mask],
+            y = self.rates[mask],
+            c = self.classes[mask],
+        )
+        axes["classes"].set_title("Class Assignment")
+        axes["classes"].set_xlabel("Rates")
+        axes["classes"].set_ylabel("ISIs")
+        axes["classes"].legend(
+            *scatter.legend_elements(),
+            loc = "upper right", 
+            title = "Classes"
+        )
+
+        X, Y = sample.nonzero()
+        axes["spikes"].scatter(
+            x = X,
+            y = Y,
+            marker = "|"
+        )
+        axes["spikes"].set_title(f"Sample of Class {cls} (ISI: {isi}, Rate: {rate})")
+        axes["spikes"].set_xlabel("Time Steps")
+        axes["spikes"].set_xlim(left = 0, right = self.time_steps)
+        axes["spikes"].set_ylabel("Neurons")
+
+        X, Y = jittered_sample.nonzero()
+        axes["jittered"].scatter(
+            x = X, 
+            y = Y,
+            marker = "|"
+        )
+        axes["jittered"].set_title(f"Jittered Sample of Class {cls} (ISI: {isi}, Rate: {rate}, Jitter: {self.jitter})")
+        axes["jittered"].set_xlabel("Time Steps")
+        axes["jittered"].set_xlim(left = 0, right = self.time_steps)
+        axes["jittered"].set_ylabel("Neurons")
+
+        
+        fig.tight_layout()
+
+        if save:
+            fig.savefig(
+                os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    "class-assignment.svg"
+                ),
+                format = "svg"
+            )
+
+        return fig
+
+        
 
 def vis(
         sample: np.ndarray, 
