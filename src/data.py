@@ -139,6 +139,7 @@ class DataHandler():
                 all_measure[f"sample-{n}"]["measurements"][layer] = {
                     "spikes": spikes,
                     "neurons": spikes.shape[0],
+                    "time_steps": spikes.shape[1],
                     "rates": spikes.sum(1),
                     "smoothed_rates": self.measure_rate(spikes),
                     "rsync": self.measure_rsync(spikes),
@@ -398,8 +399,7 @@ class DataHandler():
         save: bool = True,
         name_ext: str | None = None,
         blocking: bool = False
-    ) -> list[Figure]:
-        figlist = []
+    ) -> None:
 
         if save:
             os.makedirs(
@@ -410,23 +410,46 @@ class DataHandler():
                 ),
                 exist_ok = True
             )
+            os.environ["MPLBACKEND"] = "svg"
+            
+        
+        fig = plt.figure(
+            num = 1, 
+            clear = True,
+            figsize = (16,14),
+            dpi = 300   
+        )
 
         for key in self._tendencies.keys():
             measurements = self._tendencies[key]["measurements"]
-
-            fig, axes = plt.subplots(
-                nrows = 3,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
-                ncols = len(measurements),  # layers as cols
-                squeeze = True,
-                figsize = (16,8),
-                dpi = 100
-            )
+            
+            if save and not blocking:
+                axes = fig.subplots(
+                    nrows = 5,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                    ncols = len(measurements),  # layers as cols
+                    squeeze = True,
+                    height_ratios = [23,23,1,12,12]
+                )
+            else:
+                fig, axes = plt.subplots(
+                    nrows = 5,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                    ncols = len(measurements),  # layers as cols
+                    squeeze = True,
+                    figsize = (16,14),
+                    dpi = 300,
+                    height_ratios = [23,23,1,12,12]
+                )
 
             for i, layer in enumerate(measurements):
                 axes[0, i] = self._plot_spikes(axes[0, i], measurements[layer])
-                axes[1, i] = self._plot_rate_heatmap(fig, axes[1, i], measurements[layer])
-                axes[2, i] = self._plot_isis(axes[2, i], measurements[layer])
-                # axes[2, i] = self._plot_pca_trajectory(axes[2, i], measurements[layer])
+                axes[1, i] = self._plot_rate_heatmap(
+                    fig = fig, 
+                    axes = axes[1, i],
+                    cax = axes[2, i],
+                    data = measurements[layer]
+                )
+                axes[3, i] = self._plot_isis(axes[3, i], measurements[layer])
+                axes[4, i] = self._plot_pca_trajectory(axes[4, i], measurements[layer])
         
             fig.suptitle(
                 f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
@@ -448,12 +471,12 @@ class DataHandler():
                     format = "svg"
                 )
 
+                fig.clear()
+
 
         if blocking:
             plt.show()
 
-        return figlist
-    
 
     def _plot_spikes(
         self,
@@ -461,20 +484,27 @@ class DataHandler():
         data: dict
     ) -> Axes:
 
+        s = None
+        if data["neurons"] > 5 and data["neurons"] <= 100:
+            s = 2
+        elif data["neurons"] > 100:
+            s = 1
+
         axes.scatter(
             *torch.nonzero(
                 data["spikes"].cpu().T,
                 as_tuple = True
             ),
-            s = 1.5,
-            c = "black"
+            s = s,
+            c = "black",
+            marker = "|"
         )
 
         axes.set_xlabel("Time (ms)")
-        axes.set_xlim(0, self.time_steps)
+        axes.set_xlim(0, data["time_steps"])
         axes.set_ylabel("Neurons")
-        axes.set_ylim(0, data["neurons"])
-        axes.set_title(f"Spikes - RSync of {data["rsync"]}")
+        axes.set_ylim(-0.5, data["neurons"] - 0.5)
+        axes.set_title("Spikes - RSync of " + "{:.2f}".format(data["rsync"]))
 
         return axes
 
@@ -483,7 +513,7 @@ class DataHandler():
         fig: Figure,
         axes: Axes,
         data: dict,
-        dt = 0.001
+        cax: Axes | None = None
     ) -> Axes:
 
         rates = data["smoothed_rates"].cpu().numpy()
@@ -499,11 +529,13 @@ class DataHandler():
 
         fig.colorbar(
             im,
-            ax = axes,
-            label = 'Firing rate (Hz)'
+            ax = axes if not cax else None,
+            cax = cax if cax else None,
+            label = 'Firing rate (Hz)',
+            location = "bottom"
         )
         axes.set_xlabel('Time (ms)')
-        axes.set_xlim(0, self.time_steps)
+        axes.set_xlim(0, data["time_steps"])
         axes.set_ylabel('Neuron')
         axes.set_title('Instantaneous firing rates')
 
@@ -522,19 +554,23 @@ class DataHandler():
             padding = 0
         ).to(torch.float)
 
+        if data_clean.numel() == 0:
+            data_clean = torch.tensor([0], dtype = torch.float)
+        
         data_hist = torch.histc(
             input = data_clean,
             bins = 100,
             min = 1,
-            max = max(2, data_clean.amax())
+            max = max(2, data_clean.amax().item())
         ).numpy()
-        breakpoint()
+
         axes.stairs(
             values = data_hist,
             fill = True
         )
         axes.set_xlabel("Bins")
         axes.set_ylabel("Counts")
+        axes.set_yscale("log")
         axes.set_title("Histogram of ISIs")
 
         return axes
