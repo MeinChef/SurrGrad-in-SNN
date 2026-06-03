@@ -14,7 +14,19 @@ from synth_model import SynthModel
 def load_config(
         path: str | None = None
 ) -> tuple[dict, dict]:
+    """
+    Convenience function to load a .yml file containing two dictionaries (`data` and `model`). 
+    Default keys for both dictionaries can be found in the `config.yml` at the root of this repository.
     
+    If path is not given, will assume the config file to be in the root folder 
+    of the repository (`../config.yml` from this file).
+    
+    :param path: An absolute path pointing to a .yml file.
+    :type path: str or None, optional (Default: None) 
+    :returns: Tuple containing both Dictionaries
+    :rtype: tuple[dict, dict]
+    """
+
     # load default config located at ../config.yml
     if path is None:
         path = os.path.join(
@@ -27,15 +39,23 @@ def load_config(
 
     return configs["data"], configs["model"]
 
-NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".pt"
+NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def save_model(
     model: SynthModel,
     identifier: str | None = None,
 ) -> None:
+    """
+    Helper function to save the model.
     
+    :param model: An instance of the SynthModel class
+    :type model: SynthModel, required
+    :param identifier: Filename the model should be saved to. 
+                    If not provided, a timestamp is being used.
+    :type identifier: str or None, optional (Default: None)
+    """
     if identifier is None:
-        identifier = NOW
+        identifier = NOW + ".pt"
 
     if "." not in identifier:
         raise ValueError(
@@ -64,9 +84,19 @@ def save_model(
 def load_model(
     identifier: str | None = None,
 ) -> SynthModel:
-    
+    """
+    A helper function to nicely load a Model previously saved to Disk.
+
+    :param identifier: A string to load a spceific model from Disk. 
+                If not given, will use the same timestamp as save_model.
+    :type identifier: str or None, optional (Default: None)
+
+    :returns: An Instance of SynthModel, fully inferred from the according file
+    :rtype: SynthModel
+    """
+
     if identifier is None:
-        identifier = NOW
+        identifier = NOW + ".pt"
 
     if "." not in identifier:
         raise ValueError(
@@ -98,23 +128,77 @@ def load_model(
     return model
 
 class DataHandler():
+    """
+    A Class for neatly wrapping an OutputMonitor.
+    Capable of measuring various metrics, and neatly visualising them.
+    """
     def __init__(
         self,
         recorder: functional.probe.OutputMonitor,
         time_steps: int,
         datapath: str = "data/",
     ) -> None:
-        
+        """
+        A Class for neatly wrapping an OutputMonitor.
+        Capable of measuring various metrics, and neatly visualising them.
+
+        :param recorder: An instance of the snntorch OutputMonitor, already wrapping a model.
+        :type recorder: snntorch.functional.probe.OutputMonitor
+        :param time_steps: The time-length of the samples passed through the network.  
+        :type time_steps: int
+        :param datapath: Path to a folder where the output should be saved to.
+        :type datapath: str, optional
+        """
+
         self.recorder = recorder
         self.path = datapath
         self.now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.time_steps = time_steps
+        self._tendencies = None
+
+        self.recorder.disable()
+
+    def enable(self) -> None:
+        """
+        Wrapper for enabling the OutputMonitor
+        """
+        self.recorder.enable()
+
+    def disable(self) -> None:
+        """
+        Wrapper for disabling the OutputMonitor
+        """
+        self.recorder.disable()
+
+    def clear_recorded_data(self) -> None:
+        """
+        Wrapper for clearing the recorded data of the OutputMonitor
+        """
+        self.recorder.clear_recorded_data()
 
 
     def measure_tendencies(
         self,
         data: torch.utils.data.DataLoader
     ) -> dict:
+        """
+        Measures various metrics and returns the results in a dictionary.
+        
+        The first batch of the passed Dataloader will be inspected, and for each sample in this batch, 
+        across every layer of the model, the following metrics will be calculated:\n
+        - Instantaneous firing rate (Exponential Kernel)\n
+        - RSync (Adapted from Zemliack et. al (2025))\n
+        - Inter Spike Intervals\n
+        
+        https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013304
+
+        :param data: A dataloader containing a (probably condensed) 
+                    set of Samples which should be evaluated.
+        :type data: torch.DataLoader
+        :returns: A Dictionary, with keys `sample-#`, which itself is a dictionary 
+                    containing the measurements (another dictionary) and the label.
+        :rtype: dict 
+        """
         
         all_measure = {}
         
@@ -153,7 +237,15 @@ class DataHandler():
         self,
         spikes: torch.Tensor
     ) -> torch.Tensor:
-        
+        """
+        Function to calculate the time-difference between the spikes of each neuron.
+        Since not every neuron spikes the same amount of times, the returning tensor is jagged in the second dimension.
+
+        :param spikes: The spike-train of a layer.
+        :type spikes: torch.Tensor
+        :returns: A Tensor with the same first dim, but jagged in the second.
+        :rtype: torch.Tensor
+        """
         if spikes.device != "cpu":
             spikes = spikes.to(torch.device('cpu'))
 
@@ -221,25 +313,19 @@ class DataHandler():
         Estimate instantaneous firing rate from spike trains using
         exponential kernel smoothing.
 
-        Parameters
-        ----------
-        spikes : torch.Tensor
-            Binary spike tensor of shape [neurons, time_steps].
-            Values should be 0/1 (or spike counts per bin).
-
-        dt : float
-            Time step size in seconds.
-            Example: dt=0.001 for 1 ms bins.
-
-        tau : float
-            Exponential kernel time constant in seconds.
-            Example: tau=0.02 for 20 ms smoothing.
-
-        Returns
-        -------
-        rates : torch.Tensor
-            Smoothed firing rates in Hz.
-            Shape: [neurons, time_steps]
+        :param spikes:  Binary spike tensor of shape [neurons, time_steps].
+                    Values should be 0/1 (or spike counts per bin).
+        :type spikes: torch.Tensor
+        :param dt: Time step size in seconds.
+                    Example: dt=0.001 for 1 ms bins.
+        :type dt: float
+        :param tau: Exponential kernel time constant in seconds.
+                    Example: tau=0.02 for 20 ms smoothing.
+        :type tau: float
+            
+        :returns: Smoothed firing rates in Hz.
+                    Shape: [neurons, time_steps]
+        :rtype: torch.Tensor
         """
 
         # kernel length: ~5 tau captures most of exponential decay
@@ -271,13 +357,15 @@ class DataHandler():
 
         return rates.squeeze(1)
 
-    # from https://github.com/rainsummer613/snn-saliency-familiarity-coding/blob/main/src/measure.py, adapted to pytorch
+    # from https://github.com/rainsummer613/snn-saliency-familiarity-coding/blob/main/src/measure.py
+    # adapted to pytorch
     def measure_rsync(
         self,
         spike_train: torch.Tensor
     ):
         """
-        Computes the rsync measure. Adapted to work with pytorch from https://github.com/rainsummer613/snn-saliency-familiarity-coding/blob/main/src/measure.py.
+        Computes the rsync measure. Adapted to work with pytorch from 
+        https://github.com/rainsummer613/snn-saliency-familiarity-coding/blob/main/src/measure.py.
         
         :param spike_train: Spike train of a layer or a model. Shape: (n_cells, time_steps)
         :type spike_train: torch.Tensor, required
@@ -400,7 +488,37 @@ class DataHandler():
         name_ext: str | None = None,
         blocking: bool = False
     ) -> None:
+        """
+        Function for visualising the previously calculated measurements.
+        Creates multiple pyplot figures, one for each sample of the batch.
+        Each figure either gets saved and discarded (if `save` and not `blocking`) or put in RAM (`blocking = False`).
 
+        The figures are structured as follows:\n
+        Row one contains the spike trains of each layer. 
+        Row two contains heatmaps of the instantaneous firing rate.
+        Row three contains histograms of the InterSpike-Intervals.
+        
+        **Caution!**\n
+        If blocking is true, each figure will stay in RAM until every sample has its own figure. 
+        This can be very memory expensive!
+
+        :param save: Whether to save the figures to files.
+        :type save: bool, optional (Default: True)
+        :parame name_ext: An identifier that gets added to each filename, 
+                    only relevant when save=True. If None, uses a timestamp.
+        :type name_ext: str or None, optional (Default: None)
+        :param blocking: Whether to "block" the execution of the function by showing the figures.
+        :type blocking: bool, optional (Default: False)
+        :raises ValueError: If measure_tendencies has not been called before 
+                    and or measurements cannot be found.
+        """
+        
+        if self._tendencies is None:
+            raise ValueError(
+                "Tendencies have not been calculated before. " \
+                "Please call measure_tendencies() before you call this function."
+            )
+        
         if save:
             os.makedirs(
                 os.path.join(
@@ -425,14 +543,18 @@ class DataHandler():
             
             if save and not blocking:
                 axes = fig.subplots(
-                    nrows = 5,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                    nrows = 5,                                           
+                    # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
+                    # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
                     squeeze = True,
                     height_ratios = [23,23,1,12,12]
                 )
             else:
                 fig, axes = plt.subplots(
-                    nrows = 5,                                           # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? (idk about last one, slopmachine suggested that)
+                    nrows = 5,                                           
+                    # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
+                    # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
                     squeeze = True,
                     figsize = (16,14),
@@ -457,16 +579,13 @@ class DataHandler():
             fig.tight_layout()
 
             if save:
+                suffix = name_ext if name_ext else self.now
                 fig.savefig(
                     os.path.join(
                         Path(__file__).parent.parent,
                         "img",
                         self.now,
-                        "tendencies-" + 
-                        name_ext if name_ext else self.now + 
-                        "-" +
-                        key + 
-                        ".svg"
+                        f"tendencies-{suffix}-{key}.svg"
                     ),
                     format = "svg"
                 )
@@ -483,7 +602,18 @@ class DataHandler():
         axes: Axes,
         data: dict
     ) -> Axes:
+        """
+        Convenience function for plotting spikes on an Axis.
+        Will also put the Rsync of the spikes in the title.
 
+        :param axes: An axes of e.g. a plt.subplots()
+        :type axes: plt.Axes
+        :param data: A dictionary containing the neccessary data.
+                Required Keys: spikes, neurons, time_steps and rsync.
+        :type data: dict
+        :returns: The Axes now containing a plot.
+        :rtype: plt.Axes
+        """
         s = None
         if data["neurons"] > 5 and data["neurons"] <= 100:
             s = 2
@@ -515,7 +645,26 @@ class DataHandler():
         data: dict,
         cax: Axes | None = None
     ) -> Axes:
+        """
+        Convenience function for plotting a heatmap of the instantaneous firing rates.
 
+        :param fig: The Figure that plots will be put on.
+        :type fig: plt.Figure
+        :param axes: Axes the Heatmap will be plotted onto.
+                If `cax` is, some space of the Axes will be used to plot the colorbar (legend). 
+        :type axes: plt.Axes
+        :param data: A dictionary containing the neccessary data. 
+                Required Keys: smoothed_rates, time_steps
+        :type data: dict
+        :param cax: An optional Axes to put the colorbar onto
+                (legend for the heatmap).
+                If None, will steal space from the `axes`
+        :type cax: plt.Axes or None, optional (Default: None)
+
+        :returns: The Axes now containing a plot.
+        :rtype: plt.Axes
+        """
+        
         rates = data["smoothed_rates"].cpu().numpy()
 
         cmap = cm.get_cmap("viridis")
@@ -546,6 +695,19 @@ class DataHandler():
         axes: Axes,
         data: dict
     ) -> Axes:
+        """
+        Convenience function for plotting a histogram of ISIs onto a given Axes.
+        Will filter out 0-ISIs, since those (should) not exist, and or be fill-values.
+
+        :param axes: Axes to plot the ISIs onto.
+        :type axes: plt.Axes
+        :param data: A dictionary containing the neccessary data. 
+                Required Keys: isis
+        :type data: dict
+                
+        :returns: The Axes now containing a plot.
+        :rtype: plt.Axes
+        """
         # doing this is kinda stupid, since there is only one value per layer
         # breakpoint()
 
@@ -580,7 +742,18 @@ class DataHandler():
         axes: Axes,
         data: dict
     ) -> Axes:
+        """
+        Convenience function to plot the PCA trajectory of the smoothed rates.
 
+        :param axes: Axes to plot the PCA onto.
+        :type axes: plt.Axes
+        :param data: A dictionary containing the neccessary data. 
+                Required Keys: smoothed_rates
+        :type data: dict
+                
+        :returns: The Axes now containing a plot.
+        :rtype: plt.Axes
+        """
         # shape: [neurons, time]
         X = data["smoothed_rates"].cpu().numpy().T
 
