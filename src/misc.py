@@ -9,10 +9,10 @@ from imports import functional
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
 def check_working_directory() -> bool:
-    '''
+    """
     Function for checking if the working direcory is in fact the top-level directory of the Git-Repo.
     Tries to descend one folder
-    '''
+    """
 
     if "SurrGrad-in-SNN" in os.getcwd()[-16:]:
         return True
@@ -33,10 +33,10 @@ def check_working_directory() -> bool:
             return False
 
 def resolve_gradient(config: dict) -> Callable:
-    '''
+    """
     Function for resolving the gradient, given as a string in config.yml, and returning a function, with proper fromatting
     for further use.
-    '''
+    """
 
     name = config["type"].lower()
 
@@ -61,10 +61,10 @@ def resolve_gradient(config: dict) -> Callable:
         raise NameError("The surrogate function specified in config is unresolveable. Check source code and typos")
 
 def resolve_loss(config: dict) -> Callable:
-    '''
+    """
     Function for resolving the loss function, given as a string in config.yml, and returning a function, with proper fromatting
     for further use.
-    '''
+    """
 
     name = config["type"].lower()
 
@@ -94,10 +94,10 @@ def resolve_loss(config: dict) -> Callable:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 
 def resolve_acc(config: dict) -> Callable:
-    '''
+    """
     Function for resolving the accuracy function, given as a string in config.yml, and returning a function, with proper fromatting
     for further use.
-    '''
+    """
 
     name = config["type"].lower()
 
@@ -109,7 +109,7 @@ def resolve_acc(config: dict) -> Callable:
         raise NameError("The accuracy function specified in config is unresolveable. Check source code and typos")
 
 def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
-    '''
+    """
     Function for resolving the optimizer, given as a string in config.yml, and returning a function, with proper fromatting
     for further use.
 
@@ -120,7 +120,7 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
     :type params: ParamT
 
     :return: optimizer
-    '''
+    """
 
     name = config["type"].lower()
 
@@ -134,14 +134,14 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
 
 def make_path(path: str | list[str]) -> os.PathLike:
-    '''
+    """
     Function for creating cross-os-compatible paths from strings.
     
     :param path: String to be converted to os.PathLike
     :type path: str or list of str, required
     :return: Path in the correct format for the current OS
     :rtype: os.PathLike object
-    '''
+    """
 
     if isinstance(path, str):
         path = [path]
