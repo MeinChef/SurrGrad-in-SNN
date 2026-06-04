@@ -592,7 +592,7 @@ class SynthModel(torch.nn.Module):
             self._move_fraction = 0
             warnings.warn(
                 "This function got called with a move_fraction of 0 or less.\n"
-                "This will result in a very inefficient forward pass."
+                "This will result in a very inefficient forward pass. "
                 "If this is not intended, change the move_fraction value in 'config.yml'.",
                 category = RuntimeWarning
             )
