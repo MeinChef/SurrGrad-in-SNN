@@ -3,15 +3,15 @@ data:
     val: 10
   time_steps: &time_steps 
     val: 1000
-  no_samples: 10000
-  jitter: 0.0
+  no_samples: 100000
+  jitter: 0.3
   min_isi: 1
   max_isi: 50
   min_rate: 2
   max_rate: 10
   only_even: True
 
-  batch_size: 256
+  batch_size: 1024
   shuffle: True
   train_split: 0.7
   prefetch: 16
@@ -30,21 +30,22 @@ model:
     # loss functions taken from snntorch
     # available losses: 
       # ce_temporal: [arg: invers]
+      # ce_max_membrane: [arg: none]
       # ce_rate: [arg: none]
       # mse_temporal: [arg: tolerance]
       # mse_rate: [arg: correct_rate, incorrect_rate]
       # mse_membrane: [arg: on_target, off_target]
-    type: "mse_membrane"
-    correct_rate: null
+    type: "mse_rate"
+    correct_rate: 0.5
+    incorrect_rate: 0
     inverse: "reciprocal" # either reciprocal or negate, default: negate
-    incorrect_rate: null
-    tolerance: 500
+    tolerance: 50
     off_target: 0
     on_target: 1
 
   accuracy:
     # available accuracies: rate, temporal
-    type: "temporal"
+    type: "rate"
   
   optimiser:
     # available optimisers: adam
@@ -77,4 +78,4 @@ model:
   samples: 10
 
   # fancy stuff (augmenting the forward pass within the model)
-  move_fraction: 0.3
+  move_fraction: 0.0

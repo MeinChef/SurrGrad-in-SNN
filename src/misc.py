@@ -72,13 +72,15 @@ def resolve_loss(config: dict) -> Callable:
         return functional.loss.ce_temporal_loss(
             inverse = config["inverse"],
         )
+    elif name == "ce_max_membrane":
+        return functional.loss.ce_max_membrane_loss()
     elif name == "ce_rate":
         return functional.loss.ce_rate_loss()
     elif name == "mse_temporal":
         return functional.loss.mse_temporal_loss(
             tolerance = config["tolerance"]
             )
-    elif name == "mse_count":
+    elif name == "mse_rate":
         return functional.loss.mse_count_loss(
             correct_rate = config["correct_rate"],
             incorrect_rate = config["incorrect_rate"]
