@@ -218,10 +218,12 @@ class DataHandler():
                 #                       |    spikes |
                 #                       |        |  |
                 spikes = torch.stack([x[n,:] for x, _ in layerlist]).T
+                membrane = torch.stack([x[n,:] for _, x in layerlist]).T
                 
                 # calculate the average isi, synchrony
                 all_measure[f"sample-{n}"]["measurements"][layer] = {
                     "spikes": spikes,
+                    "membrane": membrane,
                     "neurons": spikes.shape[0],
                     "time_steps": spikes.shape[1],
                     "rates": spikes.sum(1),
@@ -529,13 +531,17 @@ class DataHandler():
                 exist_ok = True
             )
             os.environ["MPLBACKEND"] = "svg"
-            
+
+        FIG_SIZE = (16,16)
+        DPI = 300
+        NROWS = 5
+        HEIGTH_RATIOS = [23,23,1,12,23]
         
         fig = plt.figure(
             num = 1, 
             clear = True,
-            figsize = (16,14),
-            dpi = 300   
+            figsize = FIG_SIZE,
+            dpi = DPI   
         )
 
         for key in self._tendencies.keys():
@@ -543,35 +549,37 @@ class DataHandler():
             
             if save and not blocking:
                 axes = fig.subplots(
-                    nrows = 5,                                           
+                    nrows = NROWS,                                           
                     # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
                     # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
                     squeeze = True,
-                    height_ratios = [23,23,1,12,12]
+                    height_ratios = HEIGTH_RATIOS
                 )
             else:
                 fig, axes = plt.subplots(
-                    nrows = 5,                                           
+                    nrows = NROWS,                                           
                     # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
                     # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
                     squeeze = True,
-                    figsize = (16,14),
-                    dpi = 300,
-                    height_ratios = [23,23,1,12,12]
+                    figsize = FIG_SIZE,
+                    dpi = DPI,
+                    height_ratios = HEIGTH_RATIOS
                 )
 
             for i, layer in enumerate(measurements):
-                axes[0, i] = self._plot_spikes(axes[0, i], measurements[layer])
-                axes[1, i] = self._plot_rate_heatmap(
+                self._plot_spikes(axes[0, i], measurements[layer])
+                if i == len(measurements) - 1:
+                    self._plot_membrane(axes[0, i], measurements[layer])
+                self._plot_rate_heatmap(
                     fig = fig, 
                     axes = axes[1, i],
                     cax = axes[2, i],
                     data = measurements[layer]
                 )
-                axes[3, i] = self._plot_isis(axes[3, i], measurements[layer])
-                axes[4, i] = self._plot_pca_trajectory(axes[4, i], measurements[layer])
+                self._plot_isis(axes[3, i], measurements[layer])
+                self._plot_pca_trajectory(axes[4, i], measurements[layer])
         
             fig.suptitle(
                 f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
@@ -637,6 +645,39 @@ class DataHandler():
         axes.set_title("Spikes - RSync of " + "{:.2f}".format(data["rsync"]))
 
         return axes
+
+    def _plot_membrane(
+        self,
+        axes: Axes,
+        data: dict
+    ) -> Axes:
+        """
+        Convenience function for plotting the membrane potential on an Axis.
+
+        :param axes: An axes of e.g. a plt.subplots()
+        :type axes: plt.Axes
+        :param data: A dictionary containing the neccessary data.
+                Required Keys: membrane, neurons, time_steps.
+        :type data: dict
+        :returns: The Axes now containing a plot.
+        :rtype: plt.Axes
+        """
+        
+        mem = data["membrane"].cpu().numpy()
+        # offset each membrane potential to display them above each other
+        for neuron in range(mem.shape[0]):
+            mem[neuron] += neuron * 2
+    
+        secax = axes.twinx()
+        secax.plot(
+            mem.T,
+            c = "orange",
+            alpha = 0.5
+        )
+        secax.set_ylim(-1, mem.shape[0] * 2 - 1)
+        secax.set_ylabel("Membrane Voltage")
+        return secax
+
 
     def _plot_rate_heatmap(
         self,
