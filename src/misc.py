@@ -71,27 +71,37 @@ def resolve_loss(config: dict) -> Callable:
     if name == "ce_temporal":
         return functional.loss.ce_temporal_loss(
             inverse = config["inverse"],
+            reduction = config["reduction"] 
         )
     elif name == "ce_max_membrane":
-        return functional.loss.ce_max_membrane_loss()
+        return functional.loss.ce_max_membrane_loss(            
+            reduction = config["reduction"] 
+        )
     elif name == "ce_rate":
-        return functional.loss.ce_rate_loss()
+        return functional.loss.ce_rate_loss(
+            reduction = config["reduction"]
+        )
     elif name == "mse_temporal":
         return functional.loss.mse_temporal_loss(
-            tolerance = config["tolerance"]
-            )
+            tolerance = config["tolerance"],
+            reduction = config["reduction"]
+        )
     elif name == "mse_rate":
         return functional.loss.mse_count_loss(
             correct_rate = config["correct_rate"],
-            incorrect_rate = config["incorrect_rate"]
+            incorrect_rate = config["incorrect_rate"],
+            reduction = config["reduction"]
         )
     elif name == "mse_membrane":
         return functional.loss.mse_membrane_loss(
             on_target = config["on_target"],
-            off_target = config["off_target"]
+            off_target = config["off_target"],
+            reduction = config["reduction"]
         )
     elif name == "mse":
-        return torch.nn.MSELoss()
+        return torch.nn.MSELoss(
+            reduction = config["reduction"]
+        )
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 
@@ -130,7 +140,8 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
         return torch.optim.Adam(
             params = params,
             lr = config["learning_rate"],
-            betas = (config["betas"][0], config["betas"][1])
+            betas = (config["betas"][0], config["betas"][1]),
+            weight_decay = config["weight_decay"]
         )
     else:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")

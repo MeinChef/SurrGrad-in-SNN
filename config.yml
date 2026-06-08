@@ -42,6 +42,8 @@ model:
     tolerance: 50
     off_target: 0
     on_target: 1
+    # String: "mean", "sum", "none"
+    reduction: "none"
 
   accuracy:
     # available accuracies: rate, temporal
@@ -52,6 +54,7 @@ model:
     type: "adam" 
     learning_rate: 0.0005
     betas: [0.9, 0.99]
+    weight_decay: 0.0001
 
   surrogate:
     # available in snntorch: 
@@ -69,7 +72,7 @@ model:
     threshold: null
 
   # training parameters
-  epochs: 5
+  epochs: 10
   # partial training/testing in minibatches
   partial_training: -1
   partial_testing: -1
