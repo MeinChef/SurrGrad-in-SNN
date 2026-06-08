@@ -8,6 +8,7 @@ from imports import plt
 from imports import Figure, Axes
 from imports import cm
 from imports import PCA
+from imports import NOW
 from synth_model import SynthModel
 
 # load the config.yml
@@ -38,8 +39,6 @@ def load_config(
         configs = yaml.safe_load(file)
 
     return configs["data"], configs["model"]
-
-NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def save_model(
     model: SynthModel,
@@ -135,7 +134,7 @@ class DataHandler():
     def __init__(
         self,
         recorder: functional.probe.OutputMonitor,
-        time_steps: int,
+        time_steps: int = 1000,
         datapath: str = "data/",
     ) -> None:
         """
@@ -203,12 +202,13 @@ class DataHandler():
         all_measure = {}
         
         # assuming only one batch, since that's the cleanest way
-        _, label = next(iter(data))
+        inputs, label = next(iter(data))
         for n, cls in enumerate(label):
             
             all_measure[f"sample-{n}"] = {}
             all_measure[f"sample-{n}"]["measurements"] = {}
             all_measure[f"sample-{n}"]["class"] = cls
+            all_measure[f"sample-{n}"]["input"] = inputs[n]
 
             for layer in self.recorder.monitored_layers:
                 # create tensor from recording
@@ -310,7 +310,6 @@ class DataHandler():
         dt: float = 0.001,
         tau: float = 0.02,
     ) -> torch.Tensor:
-        # TODO: rewrite to be in line with other docstrings
         """
         Estimate instantaneous firing rate from spike trains using
         exponential kernel smoothing.

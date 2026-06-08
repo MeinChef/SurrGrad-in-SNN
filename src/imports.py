@@ -41,5 +41,9 @@ from snntorch import surrogate
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib import cm
+from matplotlib.lines import Line2D
 from snntorch import spikeplot
 import torchinfo
+
+# some very global constants
+NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
