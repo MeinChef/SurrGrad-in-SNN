@@ -86,6 +86,9 @@ class SynthModel(torch.nn.Module):
             params  = self.parameters()
         )
 
+        # save loss informations
+        self._loss_reduction = config["loss"]["reduction"]
+
         # save config to class
         self._time_steps = config["time_steps"]["val"]
         self._epochs = config["epochs"]
@@ -111,6 +114,15 @@ class SynthModel(torch.nn.Module):
 
         # send to gpu
         self.to(device = DEVICE)
+
+        if DEBUG:
+            self.writer = SummaryWriter(
+                log_dir = os.path.join(
+                    Path(__file__).parent.parent,
+                    "runs",
+                    NOW
+                )
+            )
 
         # Let cuDNN find optimal algorithms
         torch.backends.cudnn.benchmark = True  
@@ -184,6 +196,7 @@ class SynthModel(torch.nn.Module):
     def fit(
         self,
         data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
+        epoch: int = 0
     ) -> tuple[list, list]:
         
         """
@@ -208,6 +221,9 @@ class SynthModel(torch.nn.Module):
         # set model in training mode
         self.train()
 
+        # offset for Tensorboard
+        offset = epoch * len(data)
+
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
             # check if the training has been already done to the specified amount
@@ -229,10 +245,92 @@ class SynthModel(torch.nn.Module):
                 print("something's fishy")
             acc = self.acc(pred, target)
 
+
+            if self._loss_reduction == "none" and DEBUG:
+                losscp = loss.clone().detach()
+                mask = target == 0
+                self.writer.add_scalar(
+                    tag = "Train/Class0-Loss",
+                    scalar_value = losscp[mask].mean(),
+                    global_step = offset + i
+                )
+                self.writer.add_scalar(
+                    tag = "Train/Class1-Loss",
+                    scalar_value = losscp[~mask].mean(),
+                    global_step = offset + i
+                )
+
+            loss = loss.mean()
+
             # weight update
             self.optim.zero_grad()
             loss.backward()
             self.optim.step()
+
+            if DEBUG:
+                plot_grad_flow(self.named_parameters())
+
+                # get gradients of all learneable parameters
+                j = 0
+                for param in self.parameters():
+                    gradsrc = param.grad
+                    if gradsrc is not None:
+                        grad = gradsrc.clone().detach()
+                        
+                        # skip if the parameters are the layers
+                        if len(grad.shape) <= 1:
+                            if grad.isnan().any():
+                                print(f"Found NaN values in Layer Gradients: {grad.isnan().sum()}")
+                            continue
+                        
+                        # max and min of non-nan values
+                        mask = grad.isfinite()
+                        maxval = grad[mask].max().item()
+                        minval = grad[mask].min().item()
+                        
+                        # fix nans in channel 0
+                        grad[~mask] = minval
+                        
+                        # channel 1: contain all the NaNs
+                        nangrads = torch.full_like(
+                            grad,
+                            fill_value = minval
+                        )
+                        nangrads[(~mask).nonzero()] = maxval
+                        
+                        # channel 2: zeros
+                        filler = torch.full_like(
+                            grad,
+                            fill_value = minval
+                        )
+                        img = torch.stack(
+                            (
+                                grad,
+                                nangrads,
+                                filler
+                            )
+                        )
+
+                        img = (img - img.min()) / (img.max() - img.min())
+                        # img *= 255
+                        self.writer.add_image(
+                            tag = f"Train/Gradients-Layer{j}",
+                            img_tensor = img,
+                            global_step = offset + i
+                        )
+                        
+                        j += 1
+
+                self.writer.add_scalar(
+                    tag = "Train/Loss",
+                    scalar_value = loss.item(),
+                    global_step = offset + i
+                )
+                self.writer.add_scalar(
+                    tag = "Train/Accuracy",
+                    scalar_value = acc,
+                    global_step = offset + i
+                )
 
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
@@ -639,3 +737,38 @@ class SynthModel(torch.nn.Module):
                 acc.append(self.acc(x, target))
 
         return loss, acc
+    
+
+
+from imports import plt
+from imports import Line2D
+from imports import numpy as np
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+    
+    Usage: Plug this function in Trainer class after loss.backwards() as 
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads= []
+    layers = []
+    for n, p in named_parameters:
+        if(p.requires_grad) and ("bias" not in n):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean().cpu())
+            max_grads.append(p.grad.abs().max().cpu())
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    
+    plt.savefig("gradflow.png")
