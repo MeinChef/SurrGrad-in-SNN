@@ -11,6 +11,7 @@ import shutil
 import math
 import timeit
 import argparse
+from itertools import product
 
 # type annotation
 import typing
@@ -31,6 +32,7 @@ import torch
 import torchvision
 import sklearn
 from sklearn.decomposition import PCA
+from torch.utils.tensorboard import SummaryWriter
 
 # snntorch, because it's stupid.
 import snntorch
@@ -47,3 +49,9 @@ import torchinfo
 
 # some very global constants
 NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else: 
+    DEVICE = torch.device("cpu")
