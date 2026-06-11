@@ -1,10 +1,17 @@
 from imports import torch
 from imports import math
+from imports import os
+from imports import Path
 from imports import snntorch as snn
 from imports import tqdm
+from imports import SummaryWriter
 from imports import Literal, Callable
 from imports import warnings
+from imports import NOW, DEVICE
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
+
+DEBUG = False
+# torch.autograd.set_detect_anomaly(True)
 
 class SynthModel(torch.nn.Module):
     def __init__(
@@ -25,14 +32,6 @@ class SynthModel(torch.nn.Module):
         
         super().__init__()
 
-        # check backend
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            self.device = torch.device("mps")
-        else: 
-            self.device = torch.device("cpu")
-
         # resolve gradient
         surrogate = resolve_gradient(config = config["surrogate"])
 
@@ -43,7 +42,7 @@ class SynthModel(torch.nn.Module):
         self.con1 = torch.nn.Linear(
             in_features = config["features"]["val"],
             out_features = config["neurons_hidden_1"],
-            device = self.device
+            device = DEVICE
         )
         torch.nn.init.xavier_uniform_(self.con1.weight)
         self.neuron1 = snn.Leaky(
@@ -56,7 +55,7 @@ class SynthModel(torch.nn.Module):
         self.con2 = torch.nn.Linear(
             in_features = config["neurons_hidden_1"],
             out_features = config["neurons_hidden_2"],
-            device = self.device
+            device = DEVICE
         )
         torch.nn.init.xavier_uniform_(self.con2.weight)
         self.neuron2 = snn.Leaky(
@@ -69,7 +68,7 @@ class SynthModel(torch.nn.Module):
         self.con3 = torch.nn.Linear(
             in_features = config["neurons_hidden_2"],
             out_features = config["neurons_out"],
-            device = self.device
+            device = DEVICE
         )
         torch.nn.init.xavier_uniform_(self.con3.weight)
         self.neuron3 = snn.Leaky(
@@ -111,7 +110,7 @@ class SynthModel(torch.nn.Module):
         self._build = False
 
         # send to gpu
-        self.to(device = self.device)
+        self.to(device = DEVICE)
 
         # Let cuDNN find optimal algorithms
         torch.backends.cudnn.benchmark = True  
@@ -157,7 +156,7 @@ class SynthModel(torch.nn.Module):
                 x.shape[1],
                 self._neurons_out
             ], 
-            device = self.device,
+            device = DEVICE,
             dtype = x.dtype
         )
 
@@ -209,9 +208,6 @@ class SynthModel(torch.nn.Module):
         # set model in training mode
         self.train()
 
-        # just try and see what happens
-        # x, train = next(iter(data))
-
         # training loop
         for i, (x, target) in tqdm.tqdm(enumerate(data)):
             # check if the training has been already done to the specified amount
@@ -219,10 +215,10 @@ class SynthModel(torch.nn.Module):
                 break
 
             # move tensors to device
-            if x.device != self.device:
-                x = x.to(self.device)
-            if target.device != self.device:
-                target = target.to(self.device)
+            if x.device != DEVICE:
+                x = x.to(DEVICE)
+            if target.device != DEVICE:
+                target = target.to(DEVICE)
 
             # make prediction
             pred = self.forward(x, batch_first = False)
@@ -235,14 +231,13 @@ class SynthModel(torch.nn.Module):
 
             # weight update
             self.optim.zero_grad()
-            # loss.backward(retain_graph = True)
             loss.backward()
             self.optim.step()
 
             # TODO: dump list regularly to file
             loss_hist.append(loss.item())
             acc_hist.append(acc)
-            
+
         return loss_hist, acc_hist
 
 
@@ -283,14 +278,17 @@ class SynthModel(torch.nn.Module):
                     break
 
                 # move tensors to device
-                x = x.to(self.device)
-                target = target.to(self.device)
+                x = x.to(DEVICE)
+                target = target.to(DEVICE)
 
                 pred = self.forward(x, batch_first = False)
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
                 acc = self.acc(pred, target)
+                
+                if self._loss_reduction == "none":
+                    loss = loss.mean()
 
                 # TODO: record loss/accuracy during training
                 # TODO: dump list regularly to file
@@ -325,7 +323,7 @@ class SynthModel(torch.nn.Module):
                 x.shape[1],             # batch size
                 self._out_first
             ],
-            device = self.device
+            device = DEVICE
         )
 
         # loop over time
@@ -350,7 +348,7 @@ class SynthModel(torch.nn.Module):
                 x.shape[1],             # batch size
                 self._out_second
             ],
-            device = self.device
+            device = DEVICE
         )
 
         # loop over time
@@ -375,7 +373,7 @@ class SynthModel(torch.nn.Module):
                 x.shape[1],             # batch size
                 self._out_third
             ],
-            device = self.device
+            device = DEVICE
         )
 
         # loop over time
@@ -412,7 +410,7 @@ class SynthModel(torch.nn.Module):
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
-                    torch.randperm(spike_idx.numel(), device = self.device)[:to_move]
+                    torch.randperm(spike_idx.numel(), device = DEVICE)[:to_move]
                 ]
                 # and add these to the valid positions
                 # the +left because they need to be in the same coordinate system as valid_to
@@ -424,7 +422,7 @@ class SynthModel(torch.nn.Module):
                     low = -self._jitter,
                     high = self._jitter + 1,
                     size = (to_move,),
-                    device = self.device
+                    device = DEVICE
                 )
 
                 # this might lead to two or more spikes to be on the same time
@@ -461,7 +459,7 @@ class SynthModel(torch.nn.Module):
                             low = -self._jitter,
                             high = self._jitter + 1,
                             size = (int(mask.sum()),),
-                            device = self.device
+                            device = DEVICE
                         )
 
                         # update candidates and afterwards the filter
@@ -562,12 +560,12 @@ class SynthModel(torch.nn.Module):
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
-                    torch.randperm(spike_idx.numel(), device = self.device)[:to_move]
+                    torch.randperm(spike_idx.numel(), device = DEVICE)[:to_move]
                 ]
 
                 # randomly choose empty positions to activate
                 add_idx = empty_idx[
-                    torch.randperm(empty_idx.numel(), device = self.device)[:to_move]
+                    torch.randperm(empty_idx.numel(), device = DEVICE)[:to_move]
                 ]
 
                 # write to tensor
@@ -620,10 +618,10 @@ class SynthModel(torch.nn.Module):
             for i, (x, target) in tqdm.tqdm(enumerate(data)):
 
                 # move tensors to device
-                if x.device != self.device:
-                    x = x.to(self.device)
-                if target.device != self.device:
-                    target = target.to(self.device)
+                if x.device != DEVICE:
+                    x = x.to(DEVICE)
+                if target.device != DEVICE:
+                    target = target.to(DEVICE)
 
                 x = self._forward_first_layer(x)
                 if only_nth_layer == 1:
