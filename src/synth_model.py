@@ -32,6 +32,8 @@ class SynthModel(torch.nn.Module):
         
         super().__init__()
 
+        # check backend
+
         # resolve gradient
         surrogate = resolve_gradient(config = config["surrogate"])
 
@@ -221,120 +223,146 @@ class SynthModel(torch.nn.Module):
         # set model in training mode
         self.train()
 
+        # prefetch the first batch and move it to the GPU
+        dataiter = iter(data)
+        x, target = next(dataiter)
+        x = x.to(DEVICE)
+        target = target.to(DEVICE)
+
         # offset for Tensorboard
         offset = epoch * len(data)
 
-        # training loop
-        for i, (x, target) in tqdm.tqdm(enumerate(data)):
-            # check if the training has been already done to the specified amount
-            if i == self._partial_train:
-                break
-
-            # move tensors to device
-            if x.device != DEVICE:
-                x = x.to(DEVICE)
-            if target.device != DEVICE:
-                target = target.to(DEVICE)
-
-            # make prediction
-            pred = self.forward(x, batch_first = False)
-
-            # loss and accuracy calculations
-            loss = self.lossfn(pred, target)
-            if loss.isnan().any():
-                print("something's fishy")
-            acc = self.acc(pred, target)
+        with torch.profiler.profile(
+            schedule = torch.profiler.schedule(
+                skip_first = 5, 
+                wait = 2, 
+                warmup = 2, 
+                active = 3, 
+                repeat = 2
+            ),
+            on_trace_ready = trace_handler,
+            with_stack = True,
+            record_shapes = True,
+        ) as prof:
 
 
-            if self._loss_reduction == "none" and DEBUG:
-                losscp = loss.clone().detach()
-                mask = target == 0
-                self.writer.add_scalar(
-                    tag = "Train/Class0-Loss",
-                    scalar_value = losscp[mask].mean(),
-                    global_step = offset + i
-                )
-                self.writer.add_scalar(
-                    tag = "Train/Class1-Loss",
-                    scalar_value = losscp[~mask].mean(),
-                    global_step = offset + i
-                )
+            # training loop
+            for i, (next_x, next_target) in tqdm.tqdm(enumerate(dataiter)):
+                # check if the training has been already done to the specified amount
+                if i == self._partial_train:
+                    break
+                
+                # move tensors to device
+                if next_x.device != DEVICE:
+                    next_x = next_x.to(DEVICE, non_blocking = True)
+                if next_target.device != DEVICE:
+                    next_target = next_target.to(DEVICE, non_blocking = True)
 
-            loss = loss.mean()
+                # make prediction
+                pred = self.forward(x, batch_first = False)
 
-            # weight update
-            self.optim.zero_grad()
-            loss.backward()
-            self.optim.step()
+                # loss and accuracy calculations
+                loss = self.lossfn(pred, target)
+                if loss.isnan().any():
+                    print("something's fishy")
+                acc = self.acc(pred, target)
 
-            if DEBUG:
-                plot_grad_flow(self.named_parameters())
 
-                # get gradients of all learneable parameters
-                j = 0
-                for param in self.parameters():
-                    gradsrc = param.grad
-                    if gradsrc is not None:
-                        grad = gradsrc.clone().detach()
-                        
-                        # skip if the parameters are the layers
-                        if len(grad.shape) <= 1:
-                            if grad.isnan().any():
-                                print(f"Found NaN values in Layer Gradients: {grad.isnan().sum()}")
-                            continue
-                        
-                        # max and min of non-nan values
-                        mask = grad.isfinite()
-                        maxval = grad[mask].max().item()
-                        minval = grad[mask].min().item()
-                        
-                        # fix nans in channel 0
-                        grad[~mask] = minval
-                        
-                        # channel 1: contain all the NaNs
-                        nangrads = torch.full_like(
-                            grad,
-                            fill_value = minval
-                        )
-                        nangrads[(~mask).nonzero()] = maxval
-                        
-                        # channel 2: zeros
-                        filler = torch.full_like(
-                            grad,
-                            fill_value = minval
-                        )
-                        img = torch.stack(
-                            (
+                if self._loss_reduction == "none" and DEBUG:
+                    losscp = loss.clone().detach()
+                    mask = target == 0
+                    self.writer.add_scalar(
+                        tag = "Train/Class0-Loss",
+                        scalar_value = losscp[mask].mean(),
+                        global_step = offset + i
+                    )
+                    self.writer.add_scalar(
+                        tag = "Train/Class1-Loss",
+                        scalar_value = losscp[~mask].mean(),
+                        global_step = offset + i
+                    )
+
+                loss = loss.mean()
+
+                # weight update
+                self.optim.zero_grad()
+                # loss.backward(retain_graph = True)
+                loss.backward()
+                self.optim.step()
+
+                x = next_x
+                target = next_target
+                # torch.cuda.synchronize()
+
+                if DEBUG:
+                    plot_grad_flow(self.named_parameters())
+
+                    # get gradients of all learneable parameters
+                    j = 0
+                    for param in self.parameters():
+                        gradsrc = param.grad
+                        if gradsrc is not None:
+                            grad = gradsrc.clone().detach()
+                            
+                            # skip if the parameters are the layers
+                            if len(grad.shape) <= 1:
+                                if grad.isnan().any():
+                                    print(f"Found NaN values in Layer Gradients: {grad.isnan().sum()}")
+                                continue
+                            
+                            # max and min of non-nan values
+                            mask = grad.isfinite()
+                            maxval = grad[mask].max().item()
+                            minval = grad[mask].min().item()
+                            
+                            # fix nans in channel 0
+                            grad[~mask] = minval
+                            
+                            # channel 1: contain all the NaNs
+                            nangrads = torch.full_like(
                                 grad,
-                                nangrads,
-                                filler
+                                fill_value = minval
                             )
-                        )
+                            nangrads[(~mask).nonzero()] = maxval
+                            
+                            # channel 2: zeros
+                            filler = torch.full_like(
+                                grad,
+                                fill_value = minval
+                            )
+                            img = torch.stack(
+                                (
+                                    grad,
+                                    nangrads,
+                                    filler
+                                )
+                            )
 
-                        img = (img - img.min()) / (img.max() - img.min())
-                        # img *= 255
-                        self.writer.add_image(
-                            tag = f"Train/Gradients-Layer{j}",
-                            img_tensor = img,
-                            global_step = offset + i
-                        )
-                        
-                        j += 1
+                            img = (img - img.min()) / (img.max() - img.min())
+                            # img *= 255
+                            self.writer.add_image(
+                                tag = f"Train/Gradients-Layer{j}",
+                                img_tensor = img,
+                                global_step = offset + i
+                            )
+                            
+                            j += 1
 
-                self.writer.add_scalar(
-                    tag = "Train/Loss",
-                    scalar_value = loss.item(),
-                    global_step = offset + i
-                )
-                self.writer.add_scalar(
-                    tag = "Train/Accuracy",
-                    scalar_value = acc,
-                    global_step = offset + i
-                )
+                    self.writer.add_scalar(
+                        tag = "Train/Loss",
+                        scalar_value = loss.item(),
+                        global_step = offset + i
+                    )
+                    self.writer.add_scalar(
+                        tag = "Train/Accuracy",
+                        scalar_value = acc,
+                        global_step = offset + i
+                    )
 
-            # TODO: dump list regularly to file
-            loss_hist.append(loss.item())
-            acc_hist.append(acc)
+                # TODO: dump list regularly to file
+                loss_hist.append(loss.item())
+                acc_hist.append(acc)
+                prof.step()
 
         return loss_hist, acc_hist
 
@@ -772,3 +800,8 @@ def plot_grad_flow(named_parameters):
                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
     
     plt.savefig("gradflow.png")
+
+def trace_handler(p):
+    output = p.key_averages().table(sort_by=f"self_{str(DEVICE)}_time_total", row_limit=10)
+    print(output)
+    p.export_chrome_trace("./torch-prof/trace_" + str(p.step_num) + ".json")
