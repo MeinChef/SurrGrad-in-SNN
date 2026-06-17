@@ -308,81 +308,52 @@ class SynthModel(torch.nn.Module):
     ### Augmented Forward ###
     #########################
 
-    def _forward_first_layer(
+    def _forward_layer(
         self,
-        x: torch.Tensor
+        x: torch.Tensor,
+        layer: int = 1
     ) -> torch.Tensor:
         
+        if layer == 1:
+            neuron = self.neuron1
+            con = self.con1
+            outshape = self._out_first
+        elif layer == 2:
+            neuron = self.neuron2
+            con = self.con2
+            outshape = self._out_second
+        elif layer == 3:
+            neuron = self.neuron3
+            con = self.con3
+            outshape = self._out_third
+        else:
+            raise ValueError(
+                "Expected parameter neuron to be in range [1,3]."
+                f"Got {layer} instead."
+            )
+        
         # setup
-        mem = self.neuron1.reset_mem()
+        mem = neuron.reset_mem()
 
         # pre-allocate the output-tensor
         out = torch.zeros(
             [
                 self._time_steps,
                 x.shape[1],             # batch size
-                self._out_first
+                outshape
             ],
             device = DEVICE
         )
 
         # loop over time
         for step in range(self._time_steps):
-            cur = self.con1(x[step])
-            out[step], mem = self.neuron1(cur, mem)
+            cur = con(x[step])
+            spk, mem = neuron(cur, mem)
 
-        return out
-    
-    def _forward_second_layer(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
-        
-        # setup
-        mem = self.neuron2.reset_mem()
-
-        # pre-allocate the output-tensor
-        out = torch.zeros(
-            [
-                self._time_steps,
-                x.shape[1],             # batch size
-                self._out_second
-            ],
-            device = DEVICE
-        )
-
-        # loop over time
-        for step in range(self._time_steps):
-            cur = self.con2(x[step])
-            out[step], mem = self.neuron2(cur, mem)
-
-        return out
-    
-    def _forward_third_layer(
-        self,
-        x: torch.Tensor
-    ) -> torch.Tensor:
-        
-        # setup
-        mem = self.neuron1.reset_mem()
-
-        # pre-allocate the output-tensor
-        out = torch.empty(
-            [
-                self._time_steps,
-                x.shape[1],             # batch size
-                self._out_third
-            ],
-            device = DEVICE
-        )
-
-        # loop over time
-        for step in range(self._time_steps):
-            cur = self.con3(x[step])
-            if self._return_spk:
-                _, out[step] = self.neuron3(cur, mem)
+            if self._return_spk and layer == 3:
+                out[step] = mem
             else:
-                out[step], _ = self.neuron3(cur, mem)
+                out[step] = spk
 
         return out
     
@@ -623,15 +594,15 @@ class SynthModel(torch.nn.Module):
                 if target.device != DEVICE:
                     target = target.to(DEVICE)
 
-                x = self._forward_first_layer(x)
+                x = self._forward_layer(x, 1)
                 if only_nth_layer == 1:
                     x = augment_fn(x)
                 
-                x = self._forward_second_layer(x)
+                x = self._forward_layer(x, 2)
                 if only_nth_layer == 2:
                     x = augment_fn(x)
                 
-                x = self._forward_third_layer(x)
+                x = self._forward_layer(x, 3)
                 if only_nth_layer == 3:
                     x = augment_fn(x)
                 
