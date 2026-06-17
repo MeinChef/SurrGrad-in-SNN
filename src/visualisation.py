@@ -1,11 +1,11 @@
 from imports import numpy as np
 from imports import plt
 from imports import torch
-from imports import spikeplot as splt
+from imports import Figure
 from misc import make_path# , load_spk_rec
 
 
-def plot_loss_acc(config:dict) -> plt.Figure:
+def plot_loss_acc(config:dict) -> Figure:
     # load values from files
     loss = np.loadtxt(
         make_path(config["data_path"] + "/loss.txt"),
@@ -38,41 +38,6 @@ def plot_loss_acc(config:dict) -> plt.Figure:
     plt.show()
 
     return fig
-
-def plot_recordings(
-        config:dict,
-        identifier:str = "test-ep0"
-) -> plt.Figure:
-    """
-    Nicely plot the spike-recordings of the hidden layers
-    
-    :param config: the config dictionary
-    :type config: dict
-    :return: the figure object
-    :rtype: plt.Figure
-    """
-
-    # load the recordings
-    rec = load_spk_rec(
-        config = config,
-        identifier = identifier
-    )
-
-    fig, axs = plt.subplots(
-        nrows = 1,
-        ncols = 1,
-        figsize = (10, 6)
-    )
-
-    tmp = torch.tensor(rec[0]["arr_1"])
-    #  s: size of scatter points; c: color of scatter points
-    splt.raster(tmp, axs)
-
-    plt.tight_layout()
-    plt.show()
-
-    return fig
-
 
 def plot_epoch_losses(
     epoch_losses,
@@ -129,11 +94,3 @@ def plot_epoch_losses(
     plt.grid(True)
     plt.tight_layout()
     plt.show()
-
-
-if __name__ == "__main__":
-    # Example usage
-    config = {
-        "data_path": "data",
-    }
-    plot_recordings(config, identifier="test-ep0")
