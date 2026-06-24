@@ -123,8 +123,16 @@ def main(
             handler.disable()                   # pyright: ignore[reportPossiblyUnboundVariable]
             handler.clear_recorded_data()       # pyright: ignore[reportPossiblyUnboundVariable]
 
-    plot_epoch_losses(trainlist)
-    plot_epoch_losses(evallist)
+    plot_epoch_losses(
+        trainlist,
+        train = True,
+        save = True    
+    )
+    plot_epoch_losses(
+        evallist,
+        train = False,
+        save = True
+    )
     
     print("Success!")
     return True

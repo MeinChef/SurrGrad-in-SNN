@@ -1,9 +1,12 @@
 from imports import numpy as np
 from imports import plt
+from imports import Path
+from imports import os
 from imports import torch
 from imports import snntorch as snn
 from imports import spikeplot as splt
 from imports import Figure
+from imports import NOW
 from misc import make_path# , load_spk_rec
 
 
@@ -35,7 +38,7 @@ def plot_loss_acc(config:dict) -> Figure:
     ax2.plot(epochs, acc, color='blue', label='Accuracy')
     ax2.tick_params(axis='y', labelcolor='blue')
 
-    plt.title('Loss and Accuracy during Training')
+    fig.suptitle('Loss and Accuracy during Training')
     fig.tight_layout()
     plt.show()
 
@@ -43,6 +46,8 @@ def plot_loss_acc(config:dict) -> Figure:
 
 def plot_epoch_losses(
     epoch_losses,
+    train: bool = False,
+    save: bool = True,
     steps_per_epoch=None,
     smooth=False,
     window=5,
@@ -95,7 +100,26 @@ def plot_epoch_losses(
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+
+    if save:
+        folderpth = os.path.join(
+            Path(__file__).parent.parent,
+            "img",
+            NOW,
+        )
+        trainstr = "train" if train else "test"
+
+        os.makedirs(
+            folderpth,
+            exist_ok = True
+        )
+        plt.savefig(
+            os.path.join(
+                folderpth,
+                f"{trainstr}-loss.png"
+            )
+        )
+
 
 def plot_lif_voltage() -> None:
     """
