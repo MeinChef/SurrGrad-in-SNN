@@ -133,12 +133,11 @@ class SynthModel(torch.nn.Module):
     ### DEFINITION OF MAIN FUNCTIONS ###
     ####################################
 
-
     def forward(
         self,
         x: torch.Tensor,
-        batch_first: bool = True
-    ) -> torch.Tensor:
+        # batch_first: bool = True
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         """
         The forward function of the network. Passes a single batch through the network. 
@@ -158,13 +157,13 @@ class SynthModel(torch.nn.Module):
         mem2 = self.neuron2.reset_mem()
         mem3 = self.neuron3.reset_mem()
 
-        if batch_first:
-            # reshape to actually have the time_steps first again
-            # that makes the for loop later cleaner
-            x = x.permute(1, 0, -1).contiguous()
+        # if batch_first:
+        #     # reshape to actually have the time_steps first again
+        #     # that makes the for loop later cleaner
+        #     x = x.permute(1, 0, -1)#.contiguous()
 
         # pre-allocate the output-tensor
-        out = torch.empty(
+        out_spk = torch.empty(
             [
                 self._time_steps,
                 x.shape[1],
@@ -172,6 +171,10 @@ class SynthModel(torch.nn.Module):
             ], 
             device = DEVICE,
             dtype = x.dtype
+        )
+        out_mem = torch.empty_like(
+            out_spk,
+            device = DEVICE
         )
 
 
@@ -188,12 +191,10 @@ class SynthModel(torch.nn.Module):
             cur3 = self.con3(spk2)
             spk3, mem3 = self.neuron3(cur3, mem3)
 
-            if self._return_spk:
-                out[step] = spk3
-            else:
-                out[step] = mem3
+            out_spk[step] = spk3
+            out_mem[step] = mem3
 
-        return out
+        return out_spk, out_mem
 
     def fit(
         self,
@@ -229,140 +230,140 @@ class SynthModel(torch.nn.Module):
         x = x.to(DEVICE)
         target = target.to(DEVICE)
 
-        # offset for Tensorboard
-        offset = epoch * len(data)
+        # # offset for Tensorboard
+        # offset = epoch * len(data)
 
-        with torch.profiler.profile(
-            schedule = torch.profiler.schedule(
-                skip_first = 5, 
-                wait = 2, 
-                warmup = 2, 
-                active = 3, 
-                repeat = 2
-            ),
-            on_trace_ready = trace_handler,
-            with_stack = True,
-            record_shapes = True,
-        ) as prof:
-
-
-            # training loop
-            for i, (next_x, next_target) in tqdm.tqdm(enumerate(dataiter)):
-                # check if the training has been already done to the specified amount
-                if i == self._partial_train:
-                    break
-                
-                # move tensors to device
-                if next_x.device != DEVICE:
-                    next_x = next_x.to(DEVICE, non_blocking = True)
-                if next_target.device != DEVICE:
-                    next_target = next_target.to(DEVICE, non_blocking = True)
-
-                # make prediction
-                pred = self.forward(x, batch_first = False)
-
-                # loss and accuracy calculations
-                loss = self.lossfn(pred, target)
-                if loss.isnan().any():
-                    print("something's fishy")
-                acc = self.acc(pred, target)
+        # with torch.profiler.profile(
+        #     schedule = torch.profiler.schedule(
+        #         skip_first = 3, 
+        #         wait = 2, 
+        #         warmup = 5, 
+        #         active = 1, 
+        #         repeat = 1
+        #     ),
+        #     on_trace_ready = trace_handler,
+        #     with_stack = True,
+        #     record_shapes = True,
+        # ) as prof:
 
 
-                if self._loss_reduction == "none" and DEBUG:
-                    losscp = loss.clone().detach()
-                    mask = target == 0
-                    self.writer.add_scalar(
-                        tag = "Train/Class0-Loss",
-                        scalar_value = losscp[mask].mean(),
-                        global_step = offset + i
-                    )
-                    self.writer.add_scalar(
-                        tag = "Train/Class1-Loss",
-                        scalar_value = losscp[~mask].mean(),
-                        global_step = offset + i
-                    )
+        # training loop
+        for i, (next_x, next_target) in tqdm.tqdm(enumerate(dataiter)):
+            # check if the training has been already done to the specified amount
+            if i == self._partial_train:
+                break
+            
+            # move tensors to device
+            if next_x.device != DEVICE:
+                next_x = next_x.to(DEVICE, non_blocking = True)
+            if next_target.device != DEVICE:
+                next_target = next_target.to(DEVICE, non_blocking = True)
 
-                loss = loss.mean()
+            # make prediction
+            _, pred = self.forward(x)
 
-                # weight update
-                self.optim.zero_grad()
-                # loss.backward(retain_graph = True)
-                loss.backward()
-                self.optim.step()
+            # loss and accuracy calculations
+            loss = self.lossfn(pred, target)
+            if loss.isnan().any():
+                print("something's fishy")
+            acc = self.acc(pred, target)
 
-                x = next_x
-                target = next_target
-                # torch.cuda.synchronize()
 
-                if DEBUG:
-                    plot_grad_flow(self.named_parameters())
+            # if self._loss_reduction == "none" and DEBUG:
+            #     losscp = loss.clone().detach()
+            #     mask = target == 0
+            #     self.writer.add_scalar(
+            #         tag = "Train/Class0-Loss",
+            #         scalar_value = losscp[mask].mean(),
+            #         global_step = offset + i
+            #     )
+            #     self.writer.add_scalar(
+            #         tag = "Train/Class1-Loss",
+            #         scalar_value = losscp[~mask].mean(),
+            #         global_step = offset + i
+            #     )
 
-                    # get gradients of all learneable parameters
-                    j = 0
-                    for param in self.parameters():
-                        gradsrc = param.grad
-                        if gradsrc is not None:
-                            grad = gradsrc.clone().detach()
-                            
-                            # skip if the parameters are the layers
-                            if len(grad.shape) <= 1:
-                                if grad.isnan().any():
-                                    print(f"Found NaN values in Layer Gradients: {grad.isnan().sum()}")
-                                continue
-                            
-                            # max and min of non-nan values
-                            mask = grad.isfinite()
-                            maxval = grad[mask].max().item()
-                            minval = grad[mask].min().item()
-                            
-                            # fix nans in channel 0
-                            grad[~mask] = minval
-                            
-                            # channel 1: contain all the NaNs
-                            nangrads = torch.full_like(
-                                grad,
-                                fill_value = minval
-                            )
-                            nangrads[(~mask).nonzero()] = maxval
-                            
-                            # channel 2: zeros
-                            filler = torch.full_like(
-                                grad,
-                                fill_value = minval
-                            )
-                            img = torch.stack(
-                                (
-                                    grad,
-                                    nangrads,
-                                    filler
-                                )
-                            )
+            # loss = loss.mean()
 
-                            img = (img - img.min()) / (img.max() - img.min())
-                            # img *= 255
-                            self.writer.add_image(
-                                tag = f"Train/Gradients-Layer{j}",
-                                img_tensor = img,
-                                global_step = offset + i
-                            )
-                            
-                            j += 1
+            # weight update
+            self.optim.zero_grad()
+            # loss.backward(retain_graph = True)
+            loss.backward()
+            self.optim.step()
 
-                    self.writer.add_scalar(
-                        tag = "Train/Loss",
-                        scalar_value = loss.item(),
-                        global_step = offset + i
-                    )
-                    self.writer.add_scalar(
-                        tag = "Train/Accuracy",
-                        scalar_value = acc,
-                        global_step = offset + i
-                    )
+            x = next_x
+            target = next_target
+            # torch.cuda.synchronize()
 
-                # TODO: dump list regularly to file
-                loss_hist.append(loss.item())
-                acc_hist.append(acc)
-                prof.step()
+            # if DEBUG:
+            #     plot_grad_flow(self.named_parameters())
+
+            #     # get gradients of all learneable parameters
+            #     j = 0
+            #     for param in self.parameters():
+            #         gradsrc = param.grad
+            #         if gradsrc is not None:
+            #             grad = gradsrc.clone().detach()
+                        
+            #             # skip if the parameters are the layers
+            #             if len(grad.shape) <= 1:
+            #                 if grad.isnan().any():
+            #                     print(f"Found NaN values in Layer Gradients: {grad.isnan().sum()}")
+            #                 continue
+                        
+            #             # max and min of non-nan values
+            #             mask = grad.isfinite()
+            #             maxval = grad[mask].max().item()
+            #             minval = grad[mask].min().item()
+                        
+            #             # fix nans in channel 0
+            #             grad[~mask] = minval
+                        
+            #             # channel 1: contain all the NaNs
+            #             nangrads = torch.full_like(
+            #                 grad,
+            #                 fill_value = minval
+            #             )
+            #             nangrads[(~mask).nonzero()] = maxval
+                        
+            #             # channel 2: zeros
+            #             filler = torch.full_like(
+            #                 grad,
+            #                 fill_value = minval
+            #             )
+            #             img = torch.stack(
+            #                 (
+            #                     grad,
+            #                     nangrads,
+            #                     filler
+            #                 )
+            #             )
+
+            #             img = (img - img.min()) / (img.max() - img.min())
+            #             # img *= 255
+            #             self.writer.add_image(
+            #                 tag = f"Train/Gradients-Layer{j}",
+            #                 img_tensor = img,
+            #                 global_step = offset + i
+            #             )
+                        
+            #             j += 1
+
+            #     self.writer.add_scalar(
+            #         tag = "Train/Loss",
+            #         scalar_value = loss.item(),
+            #         global_step = offset + i
+            #     )
+            #     self.writer.add_scalar(
+            #         tag = "Train/Accuracy",
+            #         scalar_value = acc,
+            #         global_step = offset + i
+            #     )
+
+            # TODO: dump list regularly to file
+            loss_hist.append(loss.item())
+            acc_hist.append(acc)
+            # prof.step()
 
         return loss_hist, acc_hist
 
@@ -407,7 +408,7 @@ class SynthModel(torch.nn.Module):
                 x = x.to(DEVICE)
                 target = target.to(DEVICE)
 
-                pred = self.forward(x, batch_first = False)
+                _, pred = self.forward(x)
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
