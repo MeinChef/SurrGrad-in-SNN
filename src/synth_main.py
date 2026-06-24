@@ -1,17 +1,18 @@
 from synth_data import DataGenerator
 from synth_model import SynthModel
-from data import load_config, DataHandler
+from data import load_config, save_model, load_model, DataHandler
 from misc import check_working_directory
 from visualisation import plot_epoch_losses
+from imports import NOW
 from imports import argparse
 from imports import functional
-from imports import snntorch as snn
 from imports import torch
+from imports import snntorch as snn
 
 def main(
     args: argparse.Namespace
 ):
-    cfg_data, cfg_model = load_config()
+    cfg_data, cfg_model = load_config(args.cfg_path)
 
     # initialise datagenerator
     print("Initialising Classes...")
@@ -33,21 +34,25 @@ def main(
     )
 
     # hot new shit
-    recorder = functional.probe.OutputMonitor(
-        net = model,
-        instance = snn.Leaky
-    )
+    if args.record_hidden:
+        # initialise the recorder
+        recorder = functional.probe.OutputMonitor(
+            net = model,
+            instance = snn.Leaky
+        )
+        recorder.disable()
+        
+        # and wrap it for more functions
+        handler = DataHandler(
+            recorder = recorder,
+            time_steps = cfg_data["time_steps"]["val"],
+            datapath = "data/"
+        )
 
-    # 
-    handler = DataHandler(
-        recorder = recorder,
-        time_steps = cfg_data["time_steps"]["val"],
-        datapath = "data/"
-    )
     print("Done!")
 
     # generate dataset
-    print("Generating Data...")
+    print(f"Generating Data. ({cfg_data['no_samples']} total)...")
     train, test = datagen.generate_dataset(
         no_samples = cfg_data["no_samples"],
         batch_size = cfg_data["batch_size"],
@@ -58,7 +63,7 @@ def main(
 
     curated = datagen.generate_dataset(
         no_samples = cfg_model["samples"],
-        batch_size = 1,
+        batch_size = cfg_model["samples"],
         train_split = 0,
         shuffle = False,
         prefetch = cfg_data["prefetch"],
@@ -68,64 +73,55 @@ def main(
     print("Training...")
     trainlist = []
     evallist = []
+    cur_loss = torch.inf
+
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
 
-        recorder.disable()
         loss, acc = model.fit(train)
         trainlist.append(loss)
 
-        # handler.plot_loss_accuracy(
-        #     loss = loss,
-        #     accuracy = acc,
-        #     training = True,
-        #     epoch = e,
-        #     filename = f"train-epoch{e}",
-        #     show = False
-        # )
         loss, acc = model.evaluate(
-            data = test,
+            data = test
         )
         evallist.append(loss)
 
-        # do the recording of the hidden states
-        recorder.enable()
-        _, _ = model.evaluate(
-            data = curated
-        )
-
-        # rate = handler.measure_tendency()
-        # handler.visualise(
-        #     # recorder = recorder
+        # loss, acc = model.augmented_eval(
+        #     data = test,
+        #     augment = "jitter",
+        #     jitter = 20,
+        #     only_nth_layer = 1
         # )
-        # handler.visualise_tendencies(rate)
-        # return 
+        if model._best_loss < cur_loss:
+            # update saved model
+            print("Model performance improved!\n"
+                  f"Loss of {model._best_loss} "
+                  f"and Accuracy of {torch.tensor(acc).mean()}%"
+            )
 
-        # loss, acc = model.evaluate(
-        #     data = curated_test
-        # )
-        # handler.visualise(recorder)
+            save_model(
+                model,
+                f"{NOW}.pt"
+            )
+            cur_loss = model._best_loss
 
-        # save the spike recordings cleanly to a file
-        # handler.flush_to_file(
-        #     loss = loss,
-        #     loss_ident = f"test-{e}",
-        #     acc = acc,
-        #     acc_ident = f"test-{e}",
-        #     spk_rec = rec,
-        #     spk_ident = None
-        # )
+        if args.record_hidden:
+            # record data
+            handler.enable()                    # pyright: ignore[reportPossiblyUnboundVariable]
+            _, _ = model.evaluate(
+                data = curated
+            )
 
-        # plot the spikes and loss/accuracy
-        # handler.plot_loss_accuracy(
-        #     loss = loss,
-        #     accuracy = acc,
-        #     training = False,
-        #     epoch = e,
-        #     filename = f"test-epoch{e}",
-        #     show = False
-        # )
-        recorder.clear_recorded_data()
+            # and visualise
+            handler.measure_tendencies(         # pyright: ignore[reportPossiblyUnboundVariable]
+                curated
+            )
+            handler.visualise_tendencies(       # pyright: ignore[reportPossiblyUnboundVariable]
+                name_ext = f"{NOW}-ep{e}"
+            )
+
+            handler.disable()                   # pyright: ignore[reportPossiblyUnboundVariable]
+            handler.clear_recorded_data()       # pyright: ignore[reportPossiblyUnboundVariable]
 
     plot_epoch_losses(trainlist)
     plot_epoch_losses(evallist)
@@ -137,12 +133,12 @@ def main(
 def resolve_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data-path",
-        "-d",
+        "--cfg-path",
+        "-c",
         type = str,
         required = False,
-        default = "data/",
-        help = "Path to the data directory. Defaults to ./data/"
+        default = "config.yml",
+        help = "Path to the config directory. Defaults to ./config.yml"
     )
     parser.add_argument(
         "--record-hidden",
