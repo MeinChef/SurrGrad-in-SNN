@@ -5,6 +5,7 @@ from imports import Callable
 from imports import torch
 from imports import re
 from imports import functional
+from surrogate import stable_sigmoid
 
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
@@ -54,9 +55,8 @@ def resolve_gradient(config: dict) -> Callable:
         return surrogate.straight_through_estimator()
     elif name == "triangular":
         return surrogate.triangular(config["threshold"])
-    elif name == "super_spike_21":
-        raise NotImplementedError()
-        # return super_spike_21(config["surrogate_arg"][0],config["surrogate_arg"][1],config["surrogate_arg"][2])
+    elif name == "stable_sigmoid":
+        return stable_sigmoid(config["slope"])
     else:
         raise NameError("The surrogate function specified in config is unresolveable. Check source code and typos")
 
