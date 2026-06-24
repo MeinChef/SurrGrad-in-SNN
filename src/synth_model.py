@@ -286,9 +286,6 @@ class SynthModel(torch.nn.Module):
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
                 acc = self.acc(pred, target)
-                
-                if self._loss_reduction == "none":
-                    loss = loss.mean()
 
                 # TODO: record loss/accuracy during training
                 # TODO: dump list regularly to file
