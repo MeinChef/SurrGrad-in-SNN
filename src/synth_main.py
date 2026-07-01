@@ -18,7 +18,7 @@ def main(
     print("Initialising Classes...")
     datagen = DataGenerator(
         time_steps = cfg_data["time_steps"]["val"],
-        jitter = cfg_data["jitter"],
+        shuffle = cfg_data["shuffle"],
         neurons = cfg_data["neurons"]["val"],
         min_isi = cfg_data["min_isi"],
         max_isi = cfg_data["max_isi"],
@@ -92,12 +92,14 @@ def main(
         #     jitter = 20,
         #     only_nth_layer = 1
         # )
+        print(
+            f"Loss of {torch.tensor(loss).mean()} "
+            f"and Accuracy of {torch.tensor(acc).mean()}%"
+        )
+
         if model._best_loss < cur_loss:
             # update saved model
-            print("Model performance improved!\n"
-                  f"Loss of {model._best_loss} "
-                  f"and Accuracy of {torch.tensor(acc).mean()}%"
-            )
+            print("Model performance improved!")
 
             save_model(
                 model,

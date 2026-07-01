@@ -1,10 +1,10 @@
 data:
   neurons: &neurons
     val: 10
-  time_steps: &time_steps 
+  time_steps: &time_steps
     val: 1000
   no_samples: 100000
-  jitter: 0.3
+  shuffle: 0.3
   min_isi: 1
   max_isi: 50
   min_rate: 2
@@ -43,15 +43,15 @@ model:
     off_target: 0
     on_target: 1
     # String: "mean", "sum", "none"
-    reduction: "none"
+    reduction: "mean"
 
   accuracy:
     # available accuracies: rate, temporal
     type: "rate"
-  
+
   optimiser:
     # available optimisers: adam
-    type: "adam" 
+    type: "adam"
     learning_rate: 0.0005
     betas: [0.9, 0.99]
     weight_decay: 0.0001
@@ -61,11 +61,11 @@ model:
     # atan [arg: alpha]
     # fast_sigmoid [arg: slope]
     # heavside [arg: None]
-    # sigmoid [arg: slope]
+    # sigmoid [arg: slope] # produces nans in gradients for float over/underflow reasons
     # spike_rate_escape [args: beta, slope]
     # straight_through [arg: None]
     # triangular [arg: threshold]
-    type: "sigmoid"
+    type: "stable_sigmoid"
     alpha: null
     beta: null
     slope: 25
