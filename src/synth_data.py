@@ -16,7 +16,7 @@ class DataGenerator():
     def __init__(
         self,
         time_steps: int,
-        jitter: float = 0.0,
+        shuffle: float = 0.0,
         neurons: int = 10,
         min_isi: int = 1,
         max_isi: int = 10,
@@ -43,8 +43,8 @@ class DataGenerator():
 
         :param time_steps: Number of time steps for each sample
         :type time_steps: int, required
-        :param jitter: Amount of spike time jitter to apply, defaults to 0.0
-        :type jitter: float, optional
+        :param shuffle: Fraction of spikes to shuffle, defaults to 0.0
+        :type shuffle: float, optional
         :param neurons: Number of neurons in each sample, defaults to 10
         :type neurons: int, optional
         :param min_isi: Minimum inter-spike interval, defaults to 1
@@ -62,7 +62,7 @@ class DataGenerator():
         """
 
         self.time_steps = time_steps
-        self.jitter = jitter
+        self.shuffle = shuffle
         self.neurons = neurons
         self._min_isi  = min_isi
         self._max_isi  = max_isi
@@ -152,7 +152,7 @@ class DataGenerator():
         """
         Generate a Sample. \n
         A sample has the shape [time_steps, neurons].
-        For each neuron there will be set rate * (time_steps/1000) spike pairs.
+        For each neuron there will be set rate * (time_steps/1000) * 1/2 spike pairs.
         The time between the spikes is set by isi.
         The spike pairs do not overlap.
 
@@ -165,7 +165,10 @@ class DataGenerator():
         """
         
         # calculate number of spikepairs, given in [source]
-        spk_pairs = math.floor(rate * (self.time_steps / 1000))
+        spk_pairs = math.floor(
+            (rate * (self.time_steps / 1000))
+            / 2
+        )
 
         # preallocate the resulting array
         out = np.zeros(
@@ -191,7 +194,8 @@ class DataGenerator():
             while cur_no < spk_pairs:
                 # break if no valid positions are left
                 if mask.sum() == 0:
-                    print("Warning: Did not generate all spike pairs, no valid positions left")
+                    print("Warning: Did not generate all spike pairs, no valid positions left!")
+                    print(f"ISI: {isi} and Rate {rate}. Wanted to generate {spk_pairs} spike pairs, but could only fit {len(all_samples)}.\n")
                     break
 
 
@@ -227,14 +231,14 @@ class DataGenerator():
             out[all_samples + isi, i] += 1
         return out
     
-    def _jitter(
+    def _shuffle(
         self,
         sample: np.ndarray,
     ) -> np.ndarray:
         
         """
-        Jitter the spikes of each neuron-specific spike train.\n
-        Moves the specified fraction of spikes (self._jitter) to a random time step.
+        Shuffle the spikes of each neuron-specific spike train.\n
+        Moves the specified fraction of spikes (self.shuffle) to a random time step.
         This breaks the inter-spike-interval of some spike pairs.
 
         :param sample: Sample with sparse spikes.
@@ -253,7 +257,7 @@ class DataGenerator():
             # that is because spikes should not change their associated neuron
             spk_mask = spikes[1] == neuron
             move_mask = valid_to[1] == neuron
-            to_move = math.ceil(spk_mask.sum() * self.jitter)
+            to_move = math.ceil(spk_mask.sum() * self.shuffle)
 
             # jumble spikes and select the first to_move ones 
             # (same as random choice without replacement, but faster)
@@ -326,20 +330,20 @@ class DataGenerator():
                     rate = int(self.rates[idx])
                 )
 
-                # some debug print statements for roughly checking whether the jittering worked
+                # some debug print statements for roughly checking whether the shuffling worked
                 if DEBUG:
                     sample_sum = [sample[:,i].sum() for i in range(self.neurons)]
                     print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
                     print(f"Sample sum per neuron: {sample_sum}.\n" +
                           f"Expected sum per neuron: {self.rates[idx] * self.neurons * (self.time_steps / 1000) * 2}")
                     
-                if self.jitter > 0:
-                    sample = self._jitter(
+                if self.shuffle > 0:
+                    sample = self._shuffle(
                         sample = sample,
                     )
                     
                     if DEBUG:
-                        print("After jittering:\n" +
+                        print("After shuffling:\n" +
                               f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
                               "Expected to match sample sum per neuron.\n" +
                               f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"               # type: ignore
@@ -474,14 +478,14 @@ class DataGenerator():
             isi = isi,
             rate = rate
         )
-        jittered_sample = self._jitter(
+        shuffleed_sample = self._shuffle(
             sample.copy()
         )
 
         fig, axes = plt.subplot_mosaic(
             mosaic = [
                 ["classes", "spikes"],
-                ["classes", "jittered"]
+                ["classes", "shuffleed"]
             ],
             figsize = (12,6),
             dpi = 200,
@@ -515,16 +519,16 @@ class DataGenerator():
         axes["spikes"].set_xlim(left = 0, right = self.time_steps)
         axes["spikes"].set_ylabel("Neurons")
 
-        X, Y = jittered_sample.nonzero()
-        axes["jittered"].scatter(
+        X, Y = shuffleed_sample.nonzero()
+        axes["shuffleed"].scatter(
             x = X, 
             y = Y,
             marker = "|"
         )
-        axes["jittered"].set_title(f"Jittered Sample of Class {cls} (ISI: {isi}, Rate: {rate}, Jitter: {self.jitter})")
-        axes["jittered"].set_xlabel("Time Steps")
-        axes["jittered"].set_xlim(left = 0, right = self.time_steps)
-        axes["jittered"].set_ylabel("Neurons")
+        axes["shuffleed"].set_title(f"shuffleed Sample of Class {cls} (ISI: {isi}, Rate: {rate}, shuffle: {self.shuffle})")
+        axes["shuffleed"].set_xlabel("Time Steps")
+        axes["shuffleed"].set_xlim(left = 0, right = self.time_steps)
+        axes["shuffleed"].set_ylabel("Neurons")
 
         
         fig.tight_layout()
