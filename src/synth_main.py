@@ -41,7 +41,7 @@ def main(
             instance = snn.Leaky
         )
         recorder.disable()
-        
+
         # and wrap it for more functions
         handler = DataHandler(
             recorder = recorder,
@@ -101,10 +101,11 @@ def main(
             # update saved model
             print("Model performance improved!")
 
-            save_model(
-                model,
-                f"{NOW}.pt"
-            )
+            if args.save_model:
+                save_model(
+                    model,
+                    f"{NOW}.pt"
+                )
             cur_loss = model._best_loss
 
         if args.record_hidden:
@@ -128,17 +129,17 @@ def main(
     plot_epoch_losses(
         trainlist,
         train = True,
-        save = True    
+        save = True
     )
     plot_epoch_losses(
         evallist,
         train = False,
         save = True
     )
-    
+
     print("Success!")
     return True
-    
+
 
 def resolve_arguments():
     parser = argparse.ArgumentParser()
@@ -153,9 +154,16 @@ def resolve_arguments():
     parser.add_argument(
         "--record-hidden",
         "-r",
-        action = argparse.BooleanOptionalAction,
+        action = "store_true",
         required = False,
         help = "Flag whether to record the hidden layers and save them"
+    )
+    parser.add_argument(
+        "--save-model",
+        "-s",
+        action = "store_true",
+        required = False,
+        help = "Flag whether to save the model checkpoints"
     )
     args = parser.parse_args()
     return args
