@@ -198,17 +198,33 @@ class DataHandler():
                     containing the measurements (another dictionary) and the label.
         :rtype: dict 
         """
-        
+
         all_measure = {}
-        
+
         # assuming only one batch, since that's the cleanest way
-        inputs, label = next(iter(data))
-        for n, cls in enumerate(label):
-            
+        inputs, labels = next(iter(data))
+        # inputs should be a tensor of shape [time, batch, neuron]
+        # and we want [batch, neuron, time] here
+        inputs = torch.permute(inputs, (1,2,0))
+
+        for n, cls in enumerate(labels):
+            this_input = inputs[n]
             all_measure[f"sample-{n}"] = {}
             all_measure[f"sample-{n}"]["measurements"] = {}
             all_measure[f"sample-{n}"]["class"] = cls
-            all_measure[f"sample-{n}"]["input"] = inputs[n]
+            all_measure[f"sample-{n}"]["input"] = this_input
+
+            # do all the analysis first for the inputs
+            all_measure[f"sample-{n}"]["measurements"]["neuron0"] = {
+                "spikes": this_input,
+                "membrane": None,
+                "neurons": this_input.shape[0],
+                "time_steps": this_input.shape[1],
+                "rates": this_input.sum(1),
+                "smoothed_rates": self.measure_rate(this_input),
+                "rsync": self.measure_rsync(this_input),
+                "isis": self.measure_isis(this_input)
+            }
 
             for layer in self.recorder.monitored_layers:
                 # create tensor from recording
@@ -273,35 +289,7 @@ class DataHandler():
             # calculates the "forward difference", so N+1 - N
             isis.append(torch.diff(spk_times[mask]))
         
-        try:
-            # this did at some point _once_ raise a cuda assertion error. IDK why.
-            # /pytorch/aten/src/ATen/native/cuda/IndexKernel.cu:111: operator(): block: [0,0,0], thread: [0,0,0] Assertion `-sizes[i] <= index && index < sizes[i] && "index out of bounds"` failed.
-            # Traceback (most recent call last):
-            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/test.py", line 84, in <module>
-            #     main()
-            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/test.py", line 78, in main
-            #     handler.measure_tendencies()
-            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/data.py", line 135, in measure_tendencies
-            #     "isis": self.measure_isis(spikes)
-            #             ^^^^^^^^^^^^^^^^^^^^^^^^^
-            #   File "/home/user/Documents/code/SurrGrad-in-SNN/src/data.py", line 176, in measure_isis
-            #     return torch.nested.nested_tensor(isis, layout = torch.jagged)
-            #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            #   File "/home/user/miniconda3/envs/snn/lib/python3.12/site-packages/torch/nested/__init__.py", line 272, in nested_tensor
-            #     nt, _ = jagged_from_list(
-            #             ^^^^^^^^^^^^^^^^^
-            #   File "/home/user/miniconda3/envs/snn/lib/python3.12/site-packages/torch/nested/_internal/nested_tensor.py", line 522, in jagged_from_list
-            #     torch.tensor(
-            # torch.AcceleratorError: CUDA error: device-side assert triggered
-            # 
-            # IF error is triggered: isis are two empty tensors
-            # I think this should be resolved by the spikes.to("cpu") earlier
-
-            out = torch.nested.nested_tensor(isis, layout = torch.jagged)
-        except Exception as e:
-            out = torch.tensor([0])
-            breakpoint()
-        
+        out = torch.nested.nested_tensor(isis, layout = torch.jagged)
         return out
 
     def measure_rate(
@@ -323,7 +311,7 @@ class DataHandler():
         :param tau: Exponential kernel time constant in seconds.
                     Example: tau=0.02 for 20 ms smoothing.
         :type tau: float
-            
+
         :returns: Smoothed firing rates in Hz.
                     Shape: [neurons, time_steps]
         :rtype: torch.Tensor
@@ -367,7 +355,7 @@ class DataHandler():
         """
         Computes the rsync measure. Adapted to work with pytorch from 
         https://github.com/rainsummer613/snn-saliency-familiarity-coding/blob/main/src/measure.py.
-        
+
         :param spike_train: Spike train of a layer or a model. Shape: (n_cells, time_steps)
         :type spike_train: torch.Tensor, required
 
@@ -388,7 +376,7 @@ class DataHandler():
                 f"Offending Value(s): {spike_train[spike_train.isinf().nonzero(as_tuple = True)]}\n" +
                 f"At indices: {spike_train.isinf().nonzero()}"
             )
-        
+
         # --- exponential convolution kernel ---
         tau = 3.0  # ms
 
@@ -433,7 +421,7 @@ class DataHandler():
             rsync = torch.tensor(0.0, device = device, dtype = dtype)
 
         return rsync
-    
+
     ######################
     ### Fancy Plotting ###
     ######################
@@ -442,7 +430,7 @@ class DataHandler():
         self,
         blocking: bool = False
     ) -> Figure:
-        
+
         # instantiate plot
         fig, axes = plt.subplots(
             nrows = 2,
@@ -498,7 +486,7 @@ class DataHandler():
         Row one contains the spike trains of each layer. 
         Row two contains heatmaps of the instantaneous firing rate.
         Row three contains histograms of the InterSpike-Intervals.
-        
+
         **Caution!**\n
         If blocking is true, each figure will stay in RAM until every sample has its own figure. 
         This can be very memory expensive!
@@ -513,13 +501,13 @@ class DataHandler():
         :raises ValueError: If measure_tendencies has not been called before 
                     and or measurements cannot be found.
         """
-        
+
         if self._tendencies is None:
             raise ValueError(
                 "Tendencies have not been calculated before. " \
                 "Please call measure_tendencies() before you call this function."
             )
-        
+
         if save:
             os.makedirs(
                 os.path.join(
@@ -531,24 +519,24 @@ class DataHandler():
             )
             os.environ["MPLBACKEND"] = "svg"
 
-        FIG_SIZE = (16,16)
+        FIG_SIZE = (23.4, 16.5) # A2 papersize
         DPI = 300
         NROWS = 5
         HEIGTH_RATIOS = [23,23,1,12,23]
-        
+
         fig = plt.figure(
             num = 1, 
             clear = True,
             figsize = FIG_SIZE,
-            dpi = DPI   
+            dpi = DPI
         )
 
         for key in self._tendencies.keys():
             measurements = self._tendencies[key]["measurements"]
-            
+
             if save and not blocking:
                 axes = fig.subplots(
-                    nrows = NROWS,                                           
+                    nrows = NROWS,
                     # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
                     # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
@@ -557,7 +545,7 @@ class DataHandler():
                 )
             else:
                 fig, axes = plt.subplots(
-                    nrows = NROWS,                                           
+                    nrows = NROWS,
                     # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
                     # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
@@ -567,6 +555,7 @@ class DataHandler():
                     height_ratios = HEIGTH_RATIOS
                 )
 
+            self.ylabel = True
             for i, layer in enumerate(measurements):
                 self._plot_spikes(axes[0, i], measurements[layer])
                 if i == len(measurements) - 1:
@@ -579,7 +568,10 @@ class DataHandler():
                 )
                 self._plot_isis(axes[3, i], measurements[layer])
                 self._plot_pca_trajectory(axes[4, i], measurements[layer])
-        
+
+                if self.ylabel:
+                    self.ylabel = False
+
             fig.suptitle(
                 f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
             )
@@ -598,7 +590,6 @@ class DataHandler():
                 )
 
                 fig.clear()
-
 
         if blocking:
             plt.show()
@@ -637,11 +628,12 @@ class DataHandler():
             marker = "|"
         )
 
-        axes.set_xlabel("Time (ms)")
+        # axes.set_xlabel("Time (ms)")
         axes.set_xlim(0, data["time_steps"])
-        axes.set_ylabel("Neurons")
-        axes.set_ylim(-0.5, data["neurons"] - 0.5)
+        axes.set_ylim(-0.5, data["neurons"])
         axes.set_title("Spikes - RSync of " + "{:.2f}".format(data["rsync"]))
+        if self.ylabel:
+            axes.set_ylabel("Neurons")
 
         return axes
 
@@ -661,12 +653,12 @@ class DataHandler():
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        
+
         mem = data["membrane"].cpu().numpy()
         # offset each membrane potential to display them above each other
         for neuron in range(mem.shape[0]):
             mem[neuron] += neuron * 2
-    
+
         secax = axes.twinx()
         secax.plot(
             mem.T,
@@ -704,7 +696,7 @@ class DataHandler():
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        
+
         rates = data["smoothed_rates"].cpu().numpy()
 
         cmap = cm.get_cmap("viridis")
@@ -723,13 +715,14 @@ class DataHandler():
             label = 'Firing rate (Hz)',
             location = "bottom"
         )
-        axes.set_xlabel('Time (ms)')
         axes.set_xlim(0, data["time_steps"])
-        axes.set_ylabel('Neuron')
         axes.set_title('Instantaneous firing rates')
+        axes.set_xlabel('Time (ms)')
+        if self.ylabel:
+            axes.set_ylabel('Neuron')
 
         return axes
-    
+
     def _plot_isis(
         self,
         axes: Axes,
@@ -744,12 +737,10 @@ class DataHandler():
         :param data: A dictionary containing the neccessary data. 
                 Required Keys: isis
         :type data: dict
-                
+
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        # doing this is kinda stupid, since there is only one value per layer
-        # breakpoint()
 
         data_clean = torch.nested.to_padded_tensor(
             data["isis"],
@@ -757,8 +748,10 @@ class DataHandler():
         ).to(torch.float)
 
         if data_clean.numel() == 0:
+            return axes
             data_clean = torch.tensor([0], dtype = torch.float)
-        
+
+
         data_hist = torch.histc(
             input = data_clean,
             bins = 100,
@@ -770,10 +763,11 @@ class DataHandler():
             values = data_hist,
             fill = True
         )
-        axes.set_xlabel("Bins")
-        axes.set_ylabel("Counts")
         axes.set_yscale("log")
         axes.set_title("Histogram of ISIs")
+        axes.set_xlabel("Bins")
+        if self.ylabel:
+            axes.set_ylabel("Counts")
 
         return axes
 
@@ -790,7 +784,7 @@ class DataHandler():
         :param data: A dictionary containing the neccessary data. 
                 Required Keys: smoothed_rates
         :type data: dict
-                
+
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
@@ -802,8 +796,9 @@ class DataHandler():
 
         axes.scatter(X_pca[:, 0], X_pca[:, 1])
 
-        axes.set_xlabel("PC1")
-        axes.set_ylabel("PC2")
         axes.set_title("Neural population trajectory")
+        axes.set_xlabel("PC1")
+        if self.ylabel:
+            axes.set_ylabel("PC2")
 
         return axes
