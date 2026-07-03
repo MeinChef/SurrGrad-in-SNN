@@ -470,6 +470,10 @@ class DataGenerator():
         cls = 1
         isi = 32
         rate = 4
+        tmp_shuffle = 0.3
+
+        backup_shuffle = self.shuffle
+        self.shuffle = tmp_shuffle
 
         # fixed sample:
         sample = self._generate_sample(
@@ -493,8 +497,8 @@ class DataGenerator():
 
         mask = (self.classes != -1).nonzero()
         scatter = axes["classes"].scatter(
-            x = self.isis[mask],
-            y = self.rates[mask],
+            x = self.rates[mask],
+            y = self.isis[mask],
             c = self.classes[mask],
         )
         axes["classes"].set_title("Class Assignment")
@@ -523,7 +527,7 @@ class DataGenerator():
             y = Y,
             marker = "|"
         )
-        axes["shuffleed"].set_title(f"shuffleed Sample of Class {cls} (ISI: {isi}, Rate: {rate}, shuffle: {self.shuffle})")
+        axes["shuffleed"].set_title(f"Shuffled Sample of Class {cls} (ISI: {isi}, Rate: {rate}, shuffle: {self.shuffle})")
         axes["shuffleed"].set_xlabel("Time Steps")
         axes["shuffleed"].set_xlim(left = 0, right = self.time_steps)
         axes["shuffleed"].set_ylabel("Neurons")
@@ -540,6 +544,7 @@ class DataGenerator():
                 format = "svg"
             )
 
+        self.shuffle = backup_shuffle
         return fig
 
 
