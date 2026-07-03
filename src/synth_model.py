@@ -1,17 +1,13 @@
 from imports import torch
 from imports import math
-from imports import os
-from imports import Path
 from imports import snntorch as snn
 from imports import tqdm
-from imports import SummaryWriter
 from imports import Literal, Callable
 from imports import warnings
-from imports import NOW, DEVICE
+from imports import DEVICE
 from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
 
 DEBUG = False
-# torch.autograd.set_detect_anomaly(True)
 
 class SynthModel(torch.nn.Module):
     def __init__(
@@ -29,7 +25,7 @@ class SynthModel(torch.nn.Module):
         :param record: Whether to record the hidden layers during testing. Can be bool or None. Default is None
         :type record: bool | None, optional
         """
-        
+
         super().__init__()
 
         # resolve gradient
@@ -59,7 +55,7 @@ class SynthModel(torch.nn.Module):
         )
         torch.nn.init.xavier_uniform_(self.con2.weight)
         self.neuron2 = snn.Leaky(
-            beta = config["neuron_beta"], 
+            beta = config["neuron_beta"],
             spike_grad = surrogate,
             init_hidden = False
         )
@@ -72,7 +68,7 @@ class SynthModel(torch.nn.Module):
         )
         torch.nn.init.xavier_uniform_(self.con3.weight)
         self.neuron3 = snn.Leaky(
-            beta = config["neuron_beta"], 
+            beta = config["neuron_beta"],
             spike_grad = surrogate,
             init_hidden = False
         )
@@ -82,7 +78,7 @@ class SynthModel(torch.nn.Module):
         self.lossfn = resolve_loss(config = config["loss"])
         self.acc    = resolve_acc(config = config["accuracy"])
         self.optim  = resolve_optim(
-            config  = config["optimiser"], 
+            config  = config["optimiser"],
             params  = self.parameters()
         )
 
@@ -113,7 +109,7 @@ class SynthModel(torch.nn.Module):
         self.to(device = DEVICE)
 
         # Let cuDNN find optimal algorithms
-        torch.backends.cudnn.benchmark = True  
+        torch.backends.cudnn.benchmark = True
 
     ####################################
     ### DEFINITION OF MAIN FUNCTIONS ###
@@ -155,13 +151,13 @@ class SynthModel(torch.nn.Module):
                 self._time_steps,
                 x.shape[1],
                 self._neurons_out
-            ], 
+            ],
             device = DEVICE,
             dtype = x.dtype
         )
 
 
-        for step in range(self._time_steps):  
+        for step in range(self._time_steps):
             # layer 1
             cur1 = self.con1(x[step])
             spk1, mem1 = self.neuron1(cur1, mem1)
@@ -185,9 +181,9 @@ class SynthModel(torch.nn.Module):
         self,
         data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
     ) -> tuple[list, list]:
-        
+
         """
-        Function for fitting (training) the network. 
+        Function for fitting (training) the network.
         The Dataloader should contain the data and the labels.
 
         :param data: Dataloader. Should contain a tuple with (data, label).
@@ -196,7 +192,7 @@ class SynthModel(torch.nn.Module):
         :return: Lists containing the accuracy and loss during the training
         :rtype: tuple[list, list]
         """
-        
+
         # # check if model has been build already
         # if not self._build:
         #     self.build_vaules(next(iter(data))[0])
@@ -258,11 +254,7 @@ class SynthModel(torch.nn.Module):
                 If record_per_class is false, the dictionary only contains the key 'class_0'
         :rtype: tuple[list, list, dict | None]
         """
-        
-        # # check if model has been build already 
-        # if not self._build:
-        #     self.build_vaules(next(iter(data))[0])
-            
+
         # pre-define variables
         loss_hist = []
         acc_hist  = []
@@ -291,14 +283,14 @@ class SynthModel(torch.nn.Module):
                 # TODO: dump list regularly to file
                 loss_hist.append(loss.item())
                 acc_hist.append(acc)
-        
+
         # update best loss
         self._best_loss = min(
             self._best_loss,
             torch.tensor(loss_hist).mean()
         )
         torch.cuda.empty_cache()
-        
+
         return loss_hist, acc_hist
 
     #########################
@@ -310,7 +302,7 @@ class SynthModel(torch.nn.Module):
         x: torch.Tensor,
         layer: int = 1
     ) -> torch.Tensor:
-        
+
         if layer == 1:
             neuron = self.neuron1
             con = self.con1
@@ -328,7 +320,7 @@ class SynthModel(torch.nn.Module):
                 "Expected parameter neuron to be in range [1,3]."
                 f"Got {layer} instead."
             )
-        
+
         # setup
         mem = neuron.reset_mem()
 
@@ -353,7 +345,7 @@ class SynthModel(torch.nn.Module):
                 out[step] = spk
 
         return out
-    
+
     def _jitter_layer_out(
         self, 
         x: torch.Tensor
@@ -385,7 +377,7 @@ class SynthModel(torch.nn.Module):
                 valid_to = torch.cat(
                     [valid_to, remove_idx + left] 
                 )
-                
+
                 jitters = torch.randint(
                     low = -self._jitter,
                     high = self._jitter + 1,
@@ -395,23 +387,23 @@ class SynthModel(torch.nn.Module):
 
                 # this might lead to two or more spikes to be on the same time
                 candidates = remove_idx + jitters
-                
+
                 # thus we check if they collide with existing spikes 
                 # (excluding the ones that'll be removed)
                 def check_candidates(candy: torch.Tensor) -> torch.Tensor:
                     # collision with existing spikes
                     # the +left translates again into the valid_to coordinate system
-                    collide = ~torch.isin(candy + left, valid_to)   
-                    
+                    collide = ~torch.isin(candy + left, valid_to)
+
                     # duplicate values
                     unique, counts = candy.unique(return_counts = True)
                     duplicate = unique[counts > 1]
                     duplicate = torch.isin(candy, duplicate)
-                    
+
                     return collide | duplicate
 
                 mask = check_candidates(candidates)
-                
+
                 # mask is a positive mask, meaning True values are acceptable.
                 # negating the mask allows for checking if any values are not acceptable
                 if ~mask.any():
@@ -433,7 +425,7 @@ class SynthModel(torch.nn.Module):
                         # update candidates and afterwards the filter
                         candidates[mask] = remove_idx[mask] + jitters
                         mask = check_candidates(candidates)
-                        
+
                         # increase counter
                         counter += 1
 
@@ -443,18 +435,18 @@ class SynthModel(torch.nn.Module):
                             for j in range(-self._jitter, self._jitter + 1):
                                 if ((valid_to == remove_idx[i] + j + left).any()):
                                     chosen = remove_idx[i] + j
-                                    
+
                                     # update valid_to (translate again with +left)
                                     valid_to = valid_to[
                                         valid_to != chosen +left
                                     ]
-                                    
+
                                     # and set it
                                     candidates[i] = chosen
                                     break
                         mask = check_candidates(candidates)
 
-                    # cry if that did not work    
+                    # cry if that did not work
                     if ~mask.any():
                         warnings.warn(
                             "Could not find spot to jitter spike to. "
@@ -494,14 +486,14 @@ class SynthModel(torch.nn.Module):
                             0, need - out.shape[0],
                         )
                     )
- 
-                
+
+
                 # write to tensor
                 out[add_idx, b, n] = 1
                 out[remove_idx + left, b, n] = 0
 
         return out
-    
+
     def _shuffle_layer_out(
         self, x: torch.Tensor
     ) -> torch.Tensor:
@@ -541,7 +533,7 @@ class SynthModel(torch.nn.Module):
                 out[add_idx, b, n] = 1
 
         return out
-    
+
     def augmented_eval(
         self,
         data: torch.utils.data.DataLoader[tuple[torch.Tensor, torch.Tensor]],
@@ -549,17 +541,17 @@ class SynthModel(torch.nn.Module):
         jitter: int | None = None,
         only_nth_layer: int | None = None
     ) -> tuple[list, list]:
-        
-        if augment != "jitter" and augment != "shuffle" and callable(augment):
+
+        if augment != "jitter" and augment != "shuffle" and not callable(augment):
             raise ValueError("Expected 'shuffle' or 'jitter'.\n"
                              f"Got '{augment}' (Type: {type(augment)}) instead.")
-        
-        if self._move_fraction <= 0:
+
+        if self._move_fraction <= 0 or only_nth_layer is None:
             self._move_fraction = 0
             warnings.warn(
-                "This function got called with a move_fraction of 0 or less.\n"
+                "This function got called with a move_fraction of 0 or less. Or with only_nth_layer as None.\n"
                 "This will result in a very inefficient forward pass. "
-                "If this is not intended, change the move_fraction value in 'config.yml'.",
+                "If this is not intended, change the 'move_fraction' and or 'augmented_layer' value in 'config.yml'.",
                 category = RuntimeWarning
             )
 
@@ -569,15 +561,14 @@ class SynthModel(torch.nn.Module):
                 self._jitter = jitter
             else:
                 raise ValueError("Expected the parameter 'jitter' to be int and positive.\n"
-                                 f"Got {jitter} of {type(jitter)} instead.")
-            
+                                 f"Got {jitter} of Type {type(jitter)} instead.")
+
         elif augment == "shuffle":
             augment_fn = self._shuffle_layer_out
 
         else:
             augment_fn = augment
 
-        
         loss = []
         acc = []
 
@@ -594,15 +585,15 @@ class SynthModel(torch.nn.Module):
                 x = self._forward_layer(x, 1)
                 if only_nth_layer == 1:
                     x = augment_fn(x)
-                
+
                 x = self._forward_layer(x, 2)
                 if only_nth_layer == 2:
                     x = augment_fn(x)
-                
+
                 x = self._forward_layer(x, 3)
                 if only_nth_layer == 3:
                     x = augment_fn(x)
-                
+
                 loss.append(self.lossfn(x, target).item)
                 acc.append(self.acc(x, target))
 
