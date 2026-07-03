@@ -90,8 +90,8 @@ class DataGenerator():
             value_grid
         )
 
-        self.isis    = value_grid[0].flatten()
-        self.rates   = value_grid[1].flatten()
+        self.isis    = value_grid[1].flatten()
+        self.rates   = value_grid[0].flatten()
         self.classes = class_assignment.flatten()
 
         self.rng = np.random.default_rng()
@@ -102,7 +102,7 @@ class DataGenerator():
             # arr: np.ndarray
             grid: Sequence[np.ndarray]
     ) -> np.ndarray:
-        
+
         """
         Function to create the class-assignment matrix.
         Maps all indices within the matrix to a certain class.
@@ -142,13 +142,13 @@ class DataGenerator():
         arr[Y > line + 3] = 1
 
         return arr
-    
+
     def _generate_sample(
         self,
         isi: int,
         rate: int
     ) -> np.ndarray:
-        
+
         """
         Generate a Sample. \n
         A sample has the shape [time_steps, neurons].
@@ -163,7 +163,7 @@ class DataGenerator():
         :returns: Numpy array containing spike trains for each neuron. Shape [time_steps, neurons]
         :rtype: numpy.ndarray
         """
-        
+
         # calculate number of spikepairs, given in [source]
         spk_pairs = math.floor(
             (rate * (self.time_steps / 1000))
@@ -213,29 +213,28 @@ class DataGenerator():
                 # put them in the sorted all_samples array
                 idx = np.searchsorted(all_samples, sample)
                 all_samples = np.insert(all_samples, idx, sample)
-                
+
                 # check if there are any values created that are in invalid positions
                 tmp_mask = np.r_[True, np.diff(all_samples) >= isi]
                 all_samples = all_samples[tmp_mask]
 
                 # update cur_no and mask
                 cur_no = all_samples.shape[0]
-                
+
                 # hacky way of setting the mask to wrong
                 idx = sample[:,None] + np.arange(isi)
                 mask[idx.clip(max = mask_max_idx)] = False
         
-                
             # set samples
             out[all_samples, i] += 1
             out[all_samples + isi, i] += 1
         return out
-    
+
     def _shuffle(
         self,
         sample: np.ndarray,
     ) -> np.ndarray:
-        
+
         """
         Shuffle the spikes of each neuron-specific spike train.\n
         Moves the specified fraction of spikes (self.shuffle) to a random time step.
@@ -246,11 +245,10 @@ class DataGenerator():
         :returns: Sample with perturbed spike-timings
         :rtype: numpy.ndarray
         """
-        
+
         # get indices where spikes are, and where they aren't 
         spikes = np.nonzero(sample)
         valid_to = np.nonzero(sample == 0)
-
 
         for neuron in range(sample.shape[1]):
             # create a mask for each neuron
@@ -336,19 +334,19 @@ class DataGenerator():
                     print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
                     print(f"Sample sum per neuron: {sample_sum}.\n" +
                           f"Expected sum per neuron: {self.rates[idx] * self.neurons * (self.time_steps / 1000) * 2}")
-                    
+
                 if self.shuffle > 0:
                     sample = self._shuffle(
                         sample = sample,
                     )
-                    
+
                     if DEBUG:
                         print("After shuffling:\n" +
                               f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
                               "Expected to match sample sum per neuron.\n" +
                               f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"               # type: ignore
                               )
-                        
+
                 # store samples and labels
                 # i * len(indices) specifies the initial offset from the array start
                 # as in: is it class one (saved from 0 - len(indices)) or is it class two
@@ -463,7 +461,7 @@ class DataGenerator():
             )
             loader = (train_loader, test_loader)
         return loader
-    
+
     def visualise_classes(
         self,
         save: bool = True
@@ -530,7 +528,6 @@ class DataGenerator():
         axes["shuffleed"].set_xlim(left = 0, right = self.time_steps)
         axes["shuffleed"].set_ylabel("Neurons")
 
-        
         fig.tight_layout()
 
         if save:
@@ -545,7 +542,6 @@ class DataGenerator():
 
         return fig
 
-        
 
 def vis(
         sample: np.ndarray, 
