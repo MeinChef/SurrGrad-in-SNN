@@ -111,9 +111,18 @@ def main(
         if args.record_hidden:
             # record data
             handler.enable()                    # pyright: ignore[reportPossiblyUnboundVariable]
-            _, _ = model.evaluate(
-                data = curated
-            )
+
+            if args.augment:
+                _, _ = model.augmented_eval(
+                    data = curated,
+                    augment = args.augment,
+                    jitter = cfg_model["jitter"],
+                    only_nth_layer = cfg_model["augmented_layer"]
+                )
+            else:
+                _, _ = model.evaluate(
+                    data = curated
+                )
 
             # and visualise
             handler.measure_tendencies(         # pyright: ignore[reportPossiblyUnboundVariable]
@@ -165,7 +174,17 @@ def resolve_arguments():
         required = False,
         help = "Flag whether to save the model checkpoints"
     )
+    parser.add_argument(
+        "--augment",
+        "-a",
+        default = None,
+        choices = ["jitter", "shuffle"],
+        required = False,
+        help = "Defines how to augment the forward pass of the model when recording. Options: 'jitter', 'shuffle'. Default: None"
+    )
     args = parser.parse_args()
+    if args.augment and not args.record_hidden:
+        parser.error("-a/--augment can only be used together with -r/--record-hidden")
     return args
 
 if __name__ == "__main__":
