@@ -295,6 +295,9 @@ class DataGenerator():
         :returns: Tuple of arrays [data, labels]
         :rtype: tuple[numpy.ndarray, numpy.ndarray]
         """
+        if no_samples % 2 == 1:
+            raise ValueError(f"no_samples must be even. Got {no_samples}.")
+        
         samples_per_class = math.ceil(no_samples / 2)
 
         if DEBUG:
