@@ -82,3 +82,5 @@ model:
 
   # fancy stuff (augmenting the forward pass within the model)
   move_fraction: 0.0
+  jitter: 30
+  augmented_layer: 2 
