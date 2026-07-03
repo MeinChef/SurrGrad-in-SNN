@@ -325,6 +325,7 @@ class DataHandler():
             device = spikes.device, 
             dtype = spikes.dtype
         ) * dt
+        t = t.flip(0)
 
         # causal exponential kernel
         kernel = torch.exp(-t / tau)
