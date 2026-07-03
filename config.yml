@@ -4,7 +4,7 @@ data:
   time_steps: &time_steps
     val: 1000
   no_samples: 100000
-  shuffle: 0.3
+  shuffle_spikes: 0.0
   min_isi: 1
   max_isi: 50
   min_rate: 2

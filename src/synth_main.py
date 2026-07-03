@@ -18,7 +18,7 @@ def main(
     print("Initialising Classes...")
     datagen = DataGenerator(
         time_steps = cfg_data["time_steps"]["val"],
-        shuffle = cfg_data["shuffle"],
+        shuffle = cfg_data["shuffle_spikes"],
         neurons = cfg_data["neurons"]["val"],
         min_isi = cfg_data["min_isi"],
         max_isi = cfg_data["max_isi"],
