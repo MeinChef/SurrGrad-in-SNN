@@ -7,6 +7,7 @@ from imports import tqdm
 from imports import Path
 from imports import Sequence
 from imports import Figure
+from imports import NOW
 
 DEBUG: bool = False
 CPU_COUNT: int = os.cpu_count() or 0
@@ -39,7 +40,7 @@ class DataGenerator():
         (rate * 2 * Time Steps) / 1000.\n
 
         Spike pairs (exactly one isi apart) are then placed in a random, non-overlapping manner during the sample time.
-        Each neuron has indipendent spike trains, but the parameters within one sample stay the same.
+        Each neuron has independent spike trains, but the parameters within one sample stay the same.
 
         :param time_steps: Number of time steps for each sample
         :type time_steps: int, required
@@ -164,7 +165,7 @@ class DataGenerator():
         :rtype: numpy.ndarray
         """
 
-        # calculate number of spikepairs, given in [source]
+        # calculate number of spike-pairs, given in [source]
         spk_pairs = math.floor(
             (rate * (self.time_steps / 1000))
             / 2
@@ -483,14 +484,14 @@ class DataGenerator():
             isi = isi,
             rate = rate
         )
-        shuffleed_sample = self._shuffle(
+        shuffled_sample = self._shuffle(
             sample.copy()
         )
 
         fig, axes = plt.subplot_mosaic(
             mosaic = [
                 ["classes", "spikes"],
-                ["classes", "shuffleed"]
+                ["classes", "shuffled"]
             ],
             figsize = (12,6),
             dpi = 200,
@@ -524,24 +525,35 @@ class DataGenerator():
         axes["spikes"].set_xlim(left = 0, right = self.time_steps)
         axes["spikes"].set_ylabel("Neurons")
 
-        X, Y = shuffleed_sample.nonzero()
-        axes["shuffleed"].scatter(
+        X, Y = shuffled_sample.nonzero()
+        axes["shuffled"].scatter(
             x = X, 
             y = Y,
             marker = "|"
         )
-        axes["shuffleed"].set_title(f"Shuffled Sample of Class {cls} (ISI: {isi}, Rate: {rate}, shuffle: {self.shuffle})")
-        axes["shuffleed"].set_xlabel("Time Steps")
-        axes["shuffleed"].set_xlim(left = 0, right = self.time_steps)
-        axes["shuffleed"].set_ylabel("Neurons")
+        axes["shuffled"].set_title(f"Shuffled Sample of Class {cls} (ISI: {isi}, Rate: {rate}, shuffle: {self.shuffle})")
+        axes["shuffled"].set_xlabel("Time Steps")
+        axes["shuffled"].set_xlim(left = 0, right = self.time_steps)
+        axes["shuffled"].set_ylabel("Neurons")
 
         fig.tight_layout()
 
         if save:
+            # create directory and save into it
+            os.makedirs(
+                os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    NOW
+                ),
+                exist_ok = True
+            )
+
             fig.savefig(
                 os.path.join(
                     Path(__file__).parent.parent,
                     "img",
+                    NOW,
                     "class-assignment.svg"
                 ),
                 format = "svg"
