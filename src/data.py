@@ -1,6 +1,7 @@
 from imports import yaml
 from imports import Path
 from imports import os
+from imports import shutil
 from imports import datetime
 from imports import functional
 from imports import torch
@@ -58,7 +59,7 @@ def save_model(
 
     if "." not in identifier:
         raise ValueError(
-            "Expected file extentsion. Try again with a '.fileextension'."
+            "Expected file extension. Try again with a '.fileextension'."
         )
     
     os.makedirs(
@@ -78,6 +79,19 @@ def save_model(
         modelpath
     )
 
+    # and also save a copy of the config
+    shutil.copy(
+        src = os.path.join(
+            Path(__file__).parent.parent,
+            "config.yml"
+        ),
+        dst = os.path.join(
+            Path(__file__).parent.parent,
+            "model",
+            "synthmodel-" + os.path.splitext(identifier)[0] + ".yml"
+        )
+    )
+
     print("Saved model to: " + modelpath)
 
 def load_model(
@@ -86,7 +100,7 @@ def load_model(
     """
     A helper function to nicely load a Model previously saved to Disk.
 
-    :param identifier: A string to load a spceific model from Disk. 
+    :param identifier: A string to load a specific model from Disk. 
                 If not given, will use the same timestamp as save_model.
     :type identifier: str or None, optional (Default: None)
 
@@ -99,7 +113,7 @@ def load_model(
 
     if "." not in identifier:
         raise ValueError(
-            "Expected file extentsion. Try again with a '.fileextension'."
+            "Expected file extension. Try again with a '.fileextension'."
         )
     
 
@@ -282,7 +296,7 @@ class DataHandler():
         
         spk_neuron, spk_times = spikes.nonzero(as_tuple = True)
         isis = []
-        # over spikes.shape[0], because not every neuron neccessarily spikes
+        # over spikes.shape[0], because not every neuron necessarily spikes
         for neuron in range(spikes.shape[0]):
             # only select relevant neurons, still works if mask is empty
             mask = torch.where(spk_neuron == neuron)[0]
@@ -523,10 +537,10 @@ class DataHandler():
         FIG_SIZE = (23.4, 16.5) # A2 papersize
         DPI = 300
         NROWS = 5
-        HEIGTH_RATIOS = [23,23,1,12,23]
+        HEIGHT_RATIOS = [23,23,1,12,23]
 
         fig = plt.figure(
-            num = 1, 
+            num = "tendency-vis", 
             clear = True,
             figsize = FIG_SIZE,
             dpi = DPI
@@ -542,7 +556,7 @@ class DataHandler():
                     # (idk about last one, slopmachine suggested that)
                     ncols = len(measurements),  # layers as cols
                     squeeze = True,
-                    height_ratios = HEIGTH_RATIOS
+                    height_ratios = HEIGHT_RATIOS
                 )
             else:
                 fig, axes = plt.subplots(
@@ -553,7 +567,7 @@ class DataHandler():
                     squeeze = True,
                     figsize = FIG_SIZE,
                     dpi = DPI,
-                    height_ratios = HEIGTH_RATIOS
+                    height_ratios = HEIGHT_RATIOS
                 )
 
             self.ylabel = True
@@ -589,6 +603,18 @@ class DataHandler():
                     ),
                     format = "svg"
                 )
+                shutil.copy(
+                    src = os.path.join(
+                        Path(__file__).parent.parent,
+                        "config.yml"
+                    ),
+                    dst = os.path.join(
+                        Path(__file__).parent.parent,
+                        "img",
+                        self.now,
+                        "config.yml"
+                    )
+                )
 
                 fig.clear()
 
@@ -607,7 +633,7 @@ class DataHandler():
 
         :param axes: An axes of e.g. a plt.subplots()
         :type axes: plt.Axes
-        :param data: A dictionary containing the neccessary data.
+        :param data: A dictionary containing the necessary data.
                 Required Keys: spikes, neurons, time_steps and rsync.
         :type data: dict
         :returns: The Axes now containing a plot.
@@ -648,7 +674,7 @@ class DataHandler():
 
         :param axes: An axes of e.g. a plt.subplots()
         :type axes: plt.Axes
-        :param data: A dictionary containing the neccessary data.
+        :param data: A dictionary containing the necessary data.
                 Required Keys: membrane, neurons, time_steps.
         :type data: dict
         :returns: The Axes now containing a plot.
@@ -686,7 +712,7 @@ class DataHandler():
         :param axes: Axes the Heatmap will be plotted onto.
                 If `cax` is, some space of the Axes will be used to plot the colorbar (legend). 
         :type axes: plt.Axes
-        :param data: A dictionary containing the neccessary data. 
+        :param data: A dictionary containing the necessary data. 
                 Required Keys: smoothed_rates, time_steps
         :type data: dict
         :param cax: An optional Axes to put the colorbar onto
@@ -735,7 +761,7 @@ class DataHandler():
 
         :param axes: Axes to plot the ISIs onto.
         :type axes: plt.Axes
-        :param data: A dictionary containing the neccessary data. 
+        :param data: A dictionary containing the necessary data. 
                 Required Keys: isis
         :type data: dict
 
@@ -782,7 +808,7 @@ class DataHandler():
 
         :param axes: Axes to plot the PCA onto.
         :type axes: plt.Axes
-        :param data: A dictionary containing the neccessary data. 
+        :param data: A dictionary containing the necessary data. 
                 Required Keys: smoothed_rates
         :type data: dict
 
