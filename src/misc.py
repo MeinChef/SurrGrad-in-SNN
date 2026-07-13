@@ -6,6 +6,7 @@ from imports import torch
 from imports import re
 from imports import functional
 from surrogate import stable_sigmoid
+from loss import FirstSpikeLoss
 
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
@@ -81,8 +82,14 @@ def resolve_loss(config: dict) -> Callable:
         return functional.loss.ce_rate_loss(
             reduction = config["reduction"]
         )
+    elif name == "ce_count":
+        return functional.loss.ce_count_loss(
+            reduction = config["reduction"]
+        )
     elif name == "mse_temporal":
         return functional.loss.mse_temporal_loss(
+            on_target = config["on_target"],
+            off_target = config["off_target"],
             tolerance = config["tolerance"],
             reduction = config["reduction"]
         )
@@ -101,6 +108,10 @@ def resolve_loss(config: dict) -> Callable:
     elif name == "mse":
         return torch.nn.MSELoss(
             reduction = config["reduction"]
+        )
+    elif name == "ttfs":
+        return FirstSpikeLoss(
+            alpha = config["alpha"],
         )
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")

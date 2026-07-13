@@ -23,7 +23,7 @@ model:
   neurons_out: 2
   neuron_beta: 0.8
   time_steps: *time_steps
-  return_spk: False
+  return_spk: True
 
   # hyperparameters
   loss:
@@ -32,18 +32,20 @@ model:
       # ce_temporal: [arg: invers]
       # ce_max_membrane: [arg: none]
       # ce_rate: [arg: none]
-      # mse_temporal: [arg: tolerance]
+      # mse_temporal: [arg: tolerance, on_target, off_target]
       # mse_rate: [arg: correct_rate, incorrect_rate]
       # mse_membrane: [arg: on_target, off_target]
-    type: "mse_rate"
+      # ttfs: [arg: alpha]
+    type: "mse_rate" # for this run it's a dummy value, actually used the FirstSpikeLoss defined in loss.py
     correct_rate: 0.5
     incorrect_rate: 0
-    inverse: "reciprocal" # either reciprocal or negate, default: negate
-    tolerance: 50
-    off_target: 0
-    on_target: 1
+    inverse: "negate" # either reciprocal or negate, default: negate
+    tolerance: 3
+    off_target: -1
+    on_target: 50
     # String: "mean", "sum", "none"
     reduction: "mean"
+    alpha: 0.001
 
   accuracy:
     # available accuracies: rate, temporal
@@ -52,7 +54,7 @@ model:
   optimiser:
     # available optimisers: adam
     type: "adam"
-    learning_rate: 0.0005
+    learning_rate: 0.001
     betas: [0.9, 0.99]
     weight_decay: 0.0001
 
@@ -65,7 +67,7 @@ model:
     # spike_rate_escape [args: beta, slope]
     # straight_through [arg: None]
     # triangular [arg: threshold]
-    type: "stable_sigmoid"
+    type: "fast_sigmoid"
     alpha: null
     beta: null
     slope: 25
