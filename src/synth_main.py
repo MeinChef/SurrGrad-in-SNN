@@ -60,6 +60,7 @@ def main(
         shuffle = cfg_data["shuffle"],
         prefetch = cfg_data["prefetch"],
     )
+    datagen.visualise_classes()
 
     curated = datagen.generate_dataset(
         no_samples = cfg_model["samples"],
