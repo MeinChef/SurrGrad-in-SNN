@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib import cm
 from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 from snntorch import spikeplot
 import torchinfo
 

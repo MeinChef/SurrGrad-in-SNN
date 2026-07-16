@@ -6,7 +6,7 @@ from imports import torch
 from imports import snntorch as snn
 from imports import spikeplot as splt
 from imports import Figure
-from imports import NOW
+from imports import NOW, MaxNLocator
 from misc import make_path# , load_spk_rec
 
 
@@ -148,10 +148,10 @@ def plot_lif_voltage() -> None:
     # def plot_cur_mem_spk(cur, mem, spk, thr_line=False, vline=False, title=False, ylim_max2=1.25):
     # Generate Plots
     fig, ax = plt.subplots(
-        3, 
-        figsize = (8,6), 
-        sharex = True, 
-        gridspec_kw = {'height_ratios': [1, 1, 0.4]}
+        4, 
+        figsize = (10,8), 
+        sharex = False, 
+        gridspec_kw = {'height_ratios': [1, 1, 0.4, 0.7]}
     )
 
     # Plot input current
@@ -172,7 +172,7 @@ def plot_lif_voltage() -> None:
         c = "black", 
         linewidth = 2
     )
-    plt.xlabel("Time step")
+    ax[1].sharex(ax[0])
 
     # Plot output spike using spikeplot
     splt.raster(
@@ -182,10 +182,49 @@ def plot_lif_voltage() -> None:
         c = "black", 
         marker = "|"
     )
+    ax[2].sharex(ax[0])
 
-    plt.ylabel("Output spikes")
-    plt.yticks([]) 
+    ax[2].set_xlabel("Time step")
+    ax[2].set_ylabel("Output spikes")
+    ax[2].set_yticks([]) 
 
+    # ------------------------------------------------------------------
+    # Zoomed spike train with binary representation
+    # ------------------------------------------------------------------
+    start, end = 20, 40
+
+    zoom_spikes = spk_rec[start:end].squeeze().int().numpy()
+    times = np.arange(start, end, dtype = np.int32)
+
+    # Show spikes
+    ax[3].vlines(
+        times[zoom_spikes == 1],
+        0,
+        1,
+        color="black",
+        linewidth=2,
+    )
+
+    ax[3].set_xlim(start - 0.5, end - 0.5)
+    ax[3].set_ylim(-0.8, 1.2)
+    ax[3].set_yticks([])
+    ax[3].set_xlabel("Time step")
+    ax[3].set_title(f"Spike train ({start}–{end}) Array representation")
+
+    # Binary values underneath each timestep
+    for t, val in zip(times, zoom_spikes):
+        ax[3].text(
+            t,
+            -0.35,
+            str(val),
+            ha="center",
+            va="center",
+            fontsize=11,
+            family="monospace",
+        )
+    ax[3].xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    fig.tight_layout()
     plt.savefig("./img/lif-neuron.png")
     plt.show()
 
