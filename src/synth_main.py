@@ -1,6 +1,6 @@
 from synth_data import DataGenerator
 from synth_model import SynthModel
-from data import load_config, save_model, load_model, DataHandler
+from data import load_config, save_model, request_model_save, DataHandler
 from misc import check_working_directory
 from visualisation import plot_epoch_losses
 from imports import NOW
@@ -108,6 +108,13 @@ def main(
                     f"{NOW}.pt"
                 )
             cur_loss = model._best_loss
+
+        if model._best_loss != cur_loss and \
+            e == cfg_model["epochs"] - 1:
+            request_model_save(
+                model = model,
+                identifier = f"{NOW}-ep{e}.pt"
+            )
 
         if args.record_hidden:
             # record data

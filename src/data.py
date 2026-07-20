@@ -94,6 +94,38 @@ def save_model(
 
     print("Saved model to: " + modelpath)
 
+def request_model_save(
+        model: SynthModel,
+        identifier: str | None = None
+    ) -> None:
+        valid = False
+        while not valid:
+            # request User input
+            inp = input(
+                "The model has not been saved during this last epoch, "
+                "because it's worse than at its best.\n"
+                "Do you still want to save it? [Y/n]"
+            )
+            # do some cleaning
+            inp = inp.lower().strip()
+
+            # and call the save function and exit
+            if inp in ["yes", "y", ""]:
+                save_model(
+                    model = model,
+                    identifier = identifier
+                )
+                valid = True
+
+            if inp in ["no", "n"]:
+                valid = True
+
+            print("Invalid Input!")
+
+        return
+
+
+
 def load_model(
     identifier: str | None = None,
 ) -> SynthModel:
