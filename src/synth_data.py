@@ -121,26 +121,24 @@ class DataGenerator():
         )
 
         # negative slope, like in Figure 1a of https://arxiv.org/pdf/2507.16043
-        slope = (
-            arr.shape[0] * (2/3) - \
-            arr.shape[0] * (1/3)
-        ) / (
-            arr.shape[1]
-        )
-        offset = Y.max() * (1/3)
 
-        # if self._only_even:
-        #     scale = 0.5
-        # else:
-        #     scale = 1
+        x0 = X.min()
+        x1 = X.max()
 
-        line = (slope * X + offset)
+        y0 = Y.min() + (2/3) * (Y.max() - Y.min())
+        y1 = Y.min() + (1/3) * (Y.max() - Y.min())
 
-        # deadzone
-        boundary = np.abs(Y - line) <= 3
+        slope = (y1 - y0) / (x1 - x0)
+        intercept = y0 - slope * x0
+
+        line = (slope * X + intercept)
+
+        # margin
+        margin = 3
+        boundary = np.abs(Y - line) <= margin
 
         arr[boundary] = -1
-        arr[Y > line + 3] = 1
+        arr[Y > line + margin] = 1
 
         return arr
 
