@@ -99,8 +99,7 @@ class DataGenerator():
         self.torch_rng = torch.default_generator
 
     def _class_assign_matrix(
-            self, 
-            # arr: np.ndarray
+            self,
             grid: Sequence[np.ndarray]
     ) -> np.ndarray:
 
@@ -178,7 +177,7 @@ class DataGenerator():
         for i in range(self.neurons):
             # array with valid start positions of a spike pair
             mask = np.ones(
-                (self.time_steps - isi,), 
+                (self.time_steps - isi,),
                 dtype = bool
             )
             mask_max_idx = mask.shape[0] - 1
@@ -223,7 +222,7 @@ class DataGenerator():
                 # hacky way of setting the mask to wrong
                 idx = sample[:,None] + np.arange(isi)
                 mask[idx.clip(max = mask_max_idx)] = False
-        
+
             # set samples
             out[all_samples, i] += 1
             out[all_samples + isi, i] += 1
@@ -271,7 +270,7 @@ class DataGenerator():
             # (and add spikes where they got moved to)
             sample[selected_spikes, neuron] -= 1
             sample[new_positions, neuron] += 1
-        
+
         return sample
 
 
@@ -296,7 +295,7 @@ class DataGenerator():
         """
         if no_samples % 2 == 1:
             raise ValueError(f"no_samples must be even. Got {no_samples}.")
-        
+
         samples_per_class = math.ceil(no_samples / 2)
 
         if DEBUG:
@@ -368,7 +367,7 @@ class DataGenerator():
         prefetch: int = 16,
         workers: int = max(2, CPU_COUNT - 4)
     ) -> Sequence[torch.utils.data.DataLoader]:
-        
+
         """
         Generate PyTorch DataLoader(s) from synthetic spike data.\n
 
@@ -394,13 +393,13 @@ class DataGenerator():
 
         :raises ValueError: If train_split > 1
         """
-        
+
         if train_split > 1:
             raise ValueError(f"train_split is too large. Can be at most 1. Actual: {train_split}")
 
         # generate the samples
         data, labels = self.generate_samples(no_samples = no_samples)
-        
+
         # put them in a dataset with the correct dtype
         ds = torch.utils.data.TensorDataset(
             torch.from_numpy(data),
@@ -508,7 +507,7 @@ class DataGenerator():
         axes["classes"].set_ylabel("ISIs")
         axes["classes"].legend(
             *scatter.legend_elements(),
-            loc = "upper right", 
+            loc = "upper right",
             title = "Classes"
         )
 
@@ -552,9 +551,9 @@ class DataGenerator():
                     Path(__file__).parent.parent,
                     "img",
                     NOW,
-                    "class-assignment.svg"
+                    "class-assignment.pdf"
                 ),
-                format = "svg"
+                format = "pdf"
             )
 
         self.shuffle = backup_shuffle
@@ -562,7 +561,7 @@ class DataGenerator():
 
 
 def vis(
-        sample: np.ndarray, 
+        sample: np.ndarray,
         label: int = 0
     ) -> None:
     plt.spy(
