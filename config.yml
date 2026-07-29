@@ -5,7 +5,7 @@ data:
     val: 1000
   no_samples: 100000
   shuffle_spikes: 0.0
-  min_isi: 1
+  min_isi: 20
   max_isi: 50
   min_rate: 2
   max_rate: 10
@@ -18,12 +18,11 @@ data:
 
 model:
   features: *neurons
-  neurons_hidden_1: 128
-  neurons_hidden_2: 64
-  neurons_out: 2
+  neurons: [100, 2]
   neuron_beta: 0.8
+  neuron_reset: "zero" # "subtract", "zero", or "none"
   time_steps: *time_steps
-  return_spk: True
+  return_spk: False
 
   # hyperparameters
   loss:
@@ -32,24 +31,32 @@ model:
       # ce_temporal: [arg: invers]
       # ce_max_membrane: [arg: none]
       # ce_rate: [arg: none]
+      # ce_count: [arg: none]
       # mse_temporal: [arg: tolerance, on_target, off_target]
       # mse_rate: [arg: correct_rate, incorrect_rate]
       # mse_membrane: [arg: on_target, off_target]
       # ttfs: [arg: alpha]
-    type: "mse_rate" # for this run it's a dummy value, actually used the FirstSpikeLoss defined in loss.py
+      # mean_ce: [arg: intermediate_reduction]
+    type: "mean_ce" # for this run it's a dummy value, actually used the FirstSpikeLoss defined in loss.py
     correct_rate: 0.5
     incorrect_rate: 0
     inverse: "negate" # either reciprocal or negate, default: negate
-    tolerance: 3
+    tolerance: 50
     off_target: -1
-    on_target: 50
+    on_target: 0
     # String: "mean", "sum", "none"
     reduction: "mean"
+    intermediate_reduction: "mean"
     alpha: 0.001
+
+    population: &population
+      is_pop: False
+      num_classes: 2
 
   accuracy:
     # available accuracies: rate, temporal
     type: "rate"
+    population: *population
 
   optimiser:
     # available optimisers: adam
@@ -74,15 +81,15 @@ model:
     threshold: null
 
   # training parameters
-  epochs: 10
+  epochs: 15
   # partial training/testing in minibatches
   partial_training: -1
   partial_testing: -1
 
   # record hidden layers?
-  samples: 10
+  samples: 20
 
   # fancy stuff (augmenting the forward pass within the model)
   move_fraction: 0.0
   jitter: 30
-  augmented_layer: 2 
+  augmented_layer: 1
