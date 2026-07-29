@@ -34,45 +34,42 @@ class SynthModel(torch.nn.Module):
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
-        # layer 1
-        self.con1 = torch.nn.Linear(
-            in_features = config["features"]["val"],
-            out_features = config["neurons_hidden_1"],
-            device = DEVICE
-        )
-        torch.nn.init.xavier_uniform_(self.con1.weight)
-        self.neuron1 = snn.Leaky(
-            beta = config["neuron_beta"], 
-            spike_grad = surrogate, 
-            init_hidden = False
-        )
+        self.layers = torch.nn.ModuleList()
+        self.neurons = torch.nn.ModuleList()
+        # create list of properties with tuple[in, out]
+        self.neuron_prop = [
+            (config["features"]["val"], config["neurons"][0]),
+            *[(
+                config["neurons"][i-1], 
+                config["neurons"][i]
+            ) for i in range(1, len(config["neurons"]))]
+        ]
 
-        # layer 2
-        self.con2 = torch.nn.Linear(
-            in_features = config["neurons_hidden_1"],
-            out_features = config["neurons_hidden_2"],
-            device = DEVICE
-        )
-        torch.nn.init.xavier_uniform_(self.con2.weight)
-        self.neuron2 = snn.Leaky(
-            beta = config["neuron_beta"],
-            spike_grad = surrogate,
-            init_hidden = False
-        )
+        for i, n in enumerate(self.neuron_prop):
+            # Linear connection layer
+            layer = torch.nn.Linear(
+                in_features = n[0],
+                out_features = n[1],
+                device = DEVICE
+            )
+            torch.nn.init.xavier_uniform_(layer.weight)
+            self.layers.append(layer)
 
-        # layer 3 / output
-        self.con3 = torch.nn.Linear(
-            in_features = config["neurons_hidden_2"],
-            out_features = config["neurons_out"],
-            device = DEVICE
-        )
-        torch.nn.init.xavier_uniform_(self.con3.weight)
-        self.neuron3 = snn.Leaky(
-            beta = config["neuron_beta"],
-            spike_grad = surrogate,
-            init_hidden = False
-        )
+            # leaky neurons
+            if n == self.neuron_prop[-1]:
+                reset = "none"
+            else:
+                reset = config["neuron_reset"]
+            neuron = snn.Leaky(
+                beta = config["neuron_beta"],
+                spike_grad = surrogate,
+                init_hidden = False,
+                reset_mechanism = reset
+            )
+            self.neurons.append(neuron)
 
+        assert len(self.neuron_prop) == len(self.neurons)
+        assert len(self.layers) == len(self.neurons)
 
         # resolve additional bits
         self.lossfn = resolve_loss(config = config["loss"])
@@ -88,16 +85,11 @@ class SynthModel(torch.nn.Module):
         self._partial_train = config["partial_training"]
         self._partial_test  = config["partial_testing"]
         self._move_fraction = config["move_fraction"]
+        self._population = config["accuracy"]["population"]["is_pop"]
+        self._num_classes = config["accuracy"]["population"]["num_classes"]
         self._best_loss = torch.inf
 
         # neuron features
-        self._in_first = config["features"]["val"]
-        self._out_first = config["neurons_hidden_1"]
-        self._in_second = self._out_first
-        self._out_second = config["neurons_hidden_2"]
-        self._in_third = self._out_second
-        self._out_third = config["neurons_out"]
-        self._neurons_out = self._out_third
         self._return_spk = config["return_spk"]
 
         # predefine output tensor for forward
@@ -136,9 +128,7 @@ class SynthModel(torch.nn.Module):
         """
 
         # setup
-        mem1 = self.neuron1.reset_mem()
-        mem2 = self.neuron2.reset_mem()
-        mem3 = self.neuron3.reset_mem()
+        mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
 
         if batch_first:
             # reshape to actually have the time_steps first again
@@ -150,7 +140,7 @@ class SynthModel(torch.nn.Module):
             [
                 self._time_steps,
                 x.shape[1],
-                self._neurons_out
+                self.neuron_prop[-1][1] # no of neurons in last layer
             ],
             device = DEVICE,
             dtype = x.dtype
@@ -158,22 +148,20 @@ class SynthModel(torch.nn.Module):
 
 
         for step in range(self._time_steps):
-            # layer 1
-            cur1 = self.con1(x[step])
-            spk1, mem1 = self.neuron1(cur1, mem1)
+            # first layer
+            cur = self.layers[0](x[step])
+            spk, mems[0] = self.neurons[0](cur, mems[0])
 
-            # layer 2
-            cur2 = self.con2(spk1)
-            spk2, mem2 = self.neuron2(cur2, mem2)
+            # hidden layers
+            for i in range(1, len(self.layers)):
+                cur = self.layers[i](spk)
+                spk, mems[i] = self.neurons[i](cur, mems[i])
 
-            # layer 3
-            cur3 = self.con3(spk2)
-            spk3, mem3 = self.neuron3(cur3, mem3)
-
+            # store output
             if self._return_spk:
-                out[step] = spk3
+                out[step] = spk
             else:
-                out[step] = mem3
+                out[step] = mems[-1]
 
         return out
 
@@ -223,7 +211,12 @@ class SynthModel(torch.nn.Module):
             loss = self.lossfn(pred, target)
             if loss.isnan().any():
                 print("something's fishy")
-            acc = self.acc(pred, target)
+            acc = self.acc(
+                pred, 
+                target,
+                population_code = self._population,
+                num_classes = self._num_classes
+            )
 
             # weight update
             self.optim.zero_grad()
@@ -277,7 +270,12 @@ class SynthModel(torch.nn.Module):
 
                 # loss and accuracy calculations
                 loss = self.lossfn(pred, target)
-                acc = self.acc(pred, target)
+                acc = self.acc(
+                    pred, 
+                    target,
+                    population_code = self._population,
+                    num_classes = self._num_classes
+                )
 
                 # TODO: record loss/accuracy during training
                 # TODO: dump list regularly to file
@@ -300,36 +298,24 @@ class SynthModel(torch.nn.Module):
     def _forward_layer(
         self,
         x: torch.Tensor,
-        layer: int = 1
+        layer: int = 0
     ) -> torch.Tensor:
 
-        if layer == 1:
-            neuron = self.neuron1
-            con = self.con1
-            outshape = self._out_first
-        elif layer == 2:
-            neuron = self.neuron2
-            con = self.con2
-            outshape = self._out_second
-        elif layer == 3:
-            neuron = self.neuron3
-            con = self.con3
-            outshape = self._out_third
-        else:
-            raise ValueError(
-                "Expected parameter neuron to be in range [1,3]."
-                f"Got {layer} instead."
-            )
+        if layer < 0 or layer > len(self.layers):
+            raise ValueError(f"Expected layer in [1, {len(self.layers)}]. Got {layer}.")
 
         # setup
-        mem = neuron.reset_mem()
+        neuron = self.neurons[layer]
+        mem = neuron.reset_mem()                # pyright: ignore[reportCallIssue]
+        con = self.layers[layer]
+
 
         # pre-allocate the output-tensor
         out = torch.zeros(
             [
                 self._time_steps,
-                x.shape[1],             # batch size
-                outshape
+                x.shape[1],                 # batch size
+                self.neuron_prop[layer][1]  # output of layer
             ],
             device = DEVICE
         )
@@ -339,7 +325,7 @@ class SynthModel(torch.nn.Module):
             cur = con(x[step])
             spk, mem = neuron(cur, mem)
 
-            if self._return_spk and layer == 3:
+            if self._return_spk and layer == len(self.layers):
                 out[step] = mem
             else:
                 out[step] = spk
@@ -515,8 +501,7 @@ class SynthModel(torch.nn.Module):
                 # available empty positions
                 empty_idx = torch.where(x[:, b, n] == 0)[0]
 
-                if empty_idx.numel() < to_move:
-                    to_move = empty_idx.numel()
+                to_move = min(to_move, empty_idx.numel())
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
