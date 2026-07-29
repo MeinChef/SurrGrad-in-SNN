@@ -6,7 +6,7 @@ from imports import torch
 from imports import re
 from imports import functional
 from surrogate import stable_sigmoid
-from loss import FirstSpikeLoss
+from loss import FirstSpikeLoss, MeanCELoss
 
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
@@ -80,10 +80,14 @@ def resolve_loss(config: dict) -> Callable:
         )
     elif name == "ce_rate":
         return functional.loss.ce_rate_loss(
+            population_code = config["population"]["is_pop"],
+            num_classes = config["population"]["num_classes"],
             reduction = config["reduction"]
         )
     elif name == "ce_count":
         return functional.loss.ce_count_loss(
+            population_code = config["population"]["is_pop"],
+            num_classes = config["population"]["num_classes"],
             reduction = config["reduction"]
         )
     elif name == "mse_temporal":
@@ -95,6 +99,8 @@ def resolve_loss(config: dict) -> Callable:
         )
     elif name == "mse_rate":
         return functional.loss.mse_count_loss(
+            population_code = config["population"]["is_pop"],
+            num_classes = config["population"]["num_classes"],
             correct_rate = config["correct_rate"],
             incorrect_rate = config["incorrect_rate"],
             reduction = config["reduction"]
@@ -112,6 +118,11 @@ def resolve_loss(config: dict) -> Callable:
     elif name == "ttfs":
         return FirstSpikeLoss(
             alpha = config["alpha"],
+        )
+    elif name == "mean_ce":
+        return MeanCELoss(
+            intermediate_reduction = config["intermediate_reduction"],
+            reduction = config["reduction"]
         )
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
