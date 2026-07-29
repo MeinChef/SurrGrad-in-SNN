@@ -48,10 +48,10 @@ def plot_epoch_losses(
     epoch_losses,
     train: bool = False,
     save: bool = True,
-    steps_per_epoch=None,
-    smooth=False,
-    window=5,
-    figsize=(10, 5),
+    steps_per_epoch = None,
+    smooth = False,
+    window = 5,
+    figsize = (10, 5),
 ):
     """
     Plot training loss over steps for multiple epochs.
@@ -70,14 +70,20 @@ def plot_epoch_losses(
         Figure size for matplotlib.
     """
 
-    plt.figure(figsize=figsize)
-
+    label = "train" if train else "test"
     global_step = 0
+
+    fig = plt.figure(
+        num = "losses",
+        figsize = figsize,
+        dpi = 300
+    )
+    axes = fig.subplots(1,1)
 
     for epoch_idx, losses in enumerate(epoch_losses):
         losses = np.array(losses)
 
-        # Optional smoothing
+        # optional smoothing
         if smooth and len(losses) >= window:
             kernel = np.ones(window) / window
             losses = np.convolve(losses, kernel, mode="valid")
@@ -92,32 +98,34 @@ def plot_epoch_losses(
                 epoch_idx * steps_per_epoch + len(losses),
             )
 
-        plt.plot(steps, losses, label=f"Epoch {epoch_idx + 1}")
+        axes.plot(steps, losses, label=f"Epoch {epoch_idx + 1}")
 
-    plt.xlabel("Training Step")
-    plt.ylabel("Loss")
-    plt.title("Training Loss per Epoch")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
+    axes.set_xlabel(f"{label.title()}ing Step")
+    axes.set_ylabel("Loss")
+    axes.set_title(f"{label.title()}ing Loss per Epoch")
+    axes.legend()
+    axes.grid(True)
+    fig.tight_layout()
 
+    # save figure
     if save:
+        # create folder if it didn't exist
         folderpth = os.path.join(
             Path(__file__).parent.parent,
             "img",
             NOW,
         )
-        trainstr = "train" if train else "test"
-
         os.makedirs(
             folderpth,
             exist_ok = True
         )
-        plt.savefig(
+
+        fig.savefig(
             os.path.join(
                 folderpth,
-                f"{trainstr}-loss.png"
-            )
+                f"{label}-loss.pdf"
+            ),
+            format = "pdf"
         )
 
 
