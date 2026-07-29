@@ -6,25 +6,28 @@ from imports import datetime
 from imports import functional
 from imports import torch
 from imports import plt
+from imports import seaborn as sns
+from imports import numpy as np
 from imports import Figure, Axes
 from imports import cm
 from imports import PCA
 from imports import NOW
 from synth_model import SynthModel
 
+
 # load the config.yml
 def load_config(
         path: str | None = None
 ) -> tuple[dict, dict]:
     """
-    Convenience function to load a .yml file containing two dictionaries (`data` and `model`). 
+    Convenience function to load a .yml file containing two dictionaries (`data` and `model`).
     Default keys for both dictionaries can be found in the `config.yml` at the root of this repository.
-    
+
     If path is not given, will assume the config file to be in the root folder 
     of the repository (`../config.yml` from this file).
-    
+
     :param path: An absolute path pointing to a .yml file.
-    :type path: str or None, optional (Default: None) 
+    :type path: str or None, optional (Default: None)
     :returns: Tuple containing both Dictionaries
     :rtype: tuple[dict, dict]
     """
@@ -47,10 +50,10 @@ def save_model(
 ) -> None:
     """
     Helper function to save the model.
-    
+
     :param model: An instance of the SynthModel class
     :type model: SynthModel, required
-    :param identifier: Filename the model should be saved to. 
+    :param identifier: Filename the model should be saved to.
                     If not provided, a timestamp is being used.
     :type identifier: str or None, optional (Default: None)
     """
@@ -61,7 +64,7 @@ def save_model(
         raise ValueError(
             "Expected file extension. Try again with a '.fileextension'."
         )
-    
+
     os.makedirs(
         os.path.join(
             Path(__file__).parent.parent,
@@ -115,15 +118,12 @@ def request_model_save(
                     model = model,
                     identifier = identifier
                 )
-                valid = True
+                return
 
             if inp in ["no", "n"]:
-                valid = True
+                return
 
             print("Invalid Input!")
-
-        return
-
 
 
 def load_model(
@@ -132,7 +132,7 @@ def load_model(
     """
     A helper function to nicely load a Model previously saved to Disk.
 
-    :param identifier: A string to load a specific model from Disk. 
+    :param identifier: A string to load a specific model from Disk.
                 If not given, will use the same timestamp as save_model.
     :type identifier: str or None, optional (Default: None)
 
@@ -147,7 +147,7 @@ def load_model(
         raise ValueError(
             "Expected file extension. Try again with a '.fileextension'."
         )
-    
+
 
     # load config
     _, cfg = load_config(
@@ -156,7 +156,7 @@ def load_model(
             "config.yml"
         )
     )
-    
+
     # load model
     model = SynthModel(cfg)
     model.load_state_dict(
@@ -172,7 +172,7 @@ def load_model(
     model.eval()
     return model
 
-class DataHandler():
+class DataHandler:
     """
     A Class for neatly wrapping an OutputMonitor.
     Capable of measuring various metrics, and neatly visualising them.
@@ -189,7 +189,7 @@ class DataHandler():
 
         :param recorder: An instance of the snntorch OutputMonitor, already wrapping a model.
         :type recorder: snntorch.functional.probe.OutputMonitor
-        :param time_steps: The time-length of the samples passed through the network.  
+        :param time_steps: The time-length of the samples passed through the network.
         :type time_steps: int
         :param datapath: Path to a folder where the output should be saved to.
         :type datapath: str, optional
@@ -199,7 +199,7 @@ class DataHandler():
         self.path = datapath
         self.now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.time_steps = time_steps
-        self._tendencies = None
+        self._tendencies = {}
 
         self.recorder.disable()
 
@@ -228,21 +228,21 @@ class DataHandler():
     ) -> dict:
         """
         Measures various metrics and returns the results in a dictionary.
-        
-        The first batch of the passed Dataloader will be inspected, and for each sample in this batch, 
+
+        The first batch of the passed Dataloader will be inspected, and for each sample in this batch,
         across every layer of the model, the following metrics will be calculated:\n
         - Instantaneous firing rate (Exponential Kernel)\n
         - RSync (Adapted from Zemliack et. al (2025))\n
         - Inter Spike Intervals\n
-        
+
         https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013304
 
-        :param data: A dataloader containing a (probably condensed) 
+        :param data: A dataloader containing a (probably condensed)
                     set of Samples which should be evaluated.
         :type data: torch.DataLoader
-        :returns: A Dictionary, with keys `sample-#`, which itself is a dictionary 
+        :returns: A Dictionary, with keys `sample-#`, which itself is a dictionary
                     containing the measurements (another dictionary) and the label.
-        :rtype: dict 
+        :rtype: dict
         """
 
         all_measure = {}
@@ -261,7 +261,7 @@ class DataHandler():
             all_measure[f"sample-{n}"]["input"] = this_input
 
             # do all the analysis first for the inputs
-            all_measure[f"sample-{n}"]["measurements"]["neuron0"] = {
+            all_measure[f"sample-{n}"]["measurements"]["neurons.-1"] = {
                 "spikes": this_input,
                 "membrane": None,
                 "neurons": this_input.shape[0],
@@ -281,7 +281,7 @@ class DataHandler():
                 #                       |        |  |
                 spikes = torch.stack([x[n,:] for x, _ in layerlist]).T
                 membrane = torch.stack([x[n,:] for _, x in layerlist]).T
-                
+
                 # calculate the average isi, synchrony
                 all_measure[f"sample-{n}"]["measurements"][layer] = {
                     "spikes": spikes,
@@ -315,17 +315,17 @@ class DataHandler():
 
         if spikes.isnan().any():
             raise ValueError(
-                "Some Value in the Spike-Train is nan.\n" + 
+                "Some Value in the Spike-Train is nan.\n" +
                 f"Offending Value(s): {spikes[spikes.isnan().nonzero(as_tuple = True)]}\n" +
                 f"At indices: {spikes.isnan().nonzero()}"
             )
         if spikes.isinf().any():
             raise ValueError(
-                "Some Value in the Spike-Train is inf.\n" + 
+                "Some Value in the Spike-Train is inf.\n" +
                 f"Offending Value(s): {spikes[spikes.isinf().nonzero(as_tuple = True)]}\n" +
                 f"At indices: {spikes.isinf().nonzero()}"
             )
-        
+
         spk_neuron, spk_times = spikes.nonzero(as_tuple = True)
         isis = []
         # over spikes.shape[0], because not every neuron necessarily spikes
@@ -334,7 +334,7 @@ class DataHandler():
             mask = torch.where(spk_neuron == neuron)[0]
             # calculates the "forward difference", so N+1 - N
             isis.append(torch.diff(spk_times[mask]))
-        
+
         out = torch.nested.nested_tensor(isis, layout = torch.jagged)
         return out
 
@@ -367,8 +367,8 @@ class DataHandler():
         kernel_length = int(5 * tau / dt)
 
         t = torch.arange(
-            kernel_length, 
-            device = spikes.device, 
+            kernel_length,
+            device = spikes.device,
             dtype = spikes.dtype
         ) * dt
         t = t.flip(0)
@@ -413,13 +413,13 @@ class DataHandler():
         """
         if spike_train.isnan().any():
             raise ValueError(
-                "Some Value in the Spike-Train is nan.\n" + 
+                "Some Value in the Spike-Train is nan.\n" +
                 f"Offending Value(s): {spike_train[spike_train.isnan().nonzero(as_tuple = True)]}\n" +
                 f"At indices: {spike_train.isnan().nonzero()}"
             )
         if spike_train.isinf().any():
             raise ValueError(
-                "Some Value in the Spike-Train is inf.\n" + 
+                "Some Value in the Spike-Train is inf.\n" +
                 f"Offending Value(s): {spike_train[spike_train.isinf().nonzero(as_tuple = True)]}\n" +
                 f"At indices: {spike_train.isinf().nonzero()}"
             )
@@ -549,7 +549,7 @@ class DataHandler():
                     and or measurements cannot be found.
         """
 
-        if self._tendencies is None:
+        if not self._tendencies:
             raise ValueError(
                 "Tendencies have not been calculated before. " \
                 "Please call measure_tendencies() before you call this function."
@@ -564,7 +564,7 @@ class DataHandler():
                 ),
                 exist_ok = True
             )
-            os.environ["MPLBACKEND"] = "svg"
+            os.environ["MPLBACKEND"] = "pdf"
 
         FIG_SIZE = (23.4, 16.5) # A2 papersize
         DPI = 300
@@ -572,13 +572,13 @@ class DataHandler():
         HEIGHT_RATIOS = [23,23,1,12,23]
 
         fig = plt.figure(
-            num = "tendency-vis", 
+            num = "tendency-vis",
             clear = True,
             figsize = FIG_SIZE,
             dpi = DPI
         )
 
-        for key in self._tendencies.keys():
+        for key in self._tendencies:
             measurements = self._tendencies[key]["measurements"]
 
             if save and not blocking:
@@ -625,30 +625,40 @@ class DataHandler():
             fig.tight_layout()
 
             if save:
-                suffix = name_ext if name_ext else self.now
+                prefix = name_ext if name_ext else self.now
                 fig.savefig(
                     os.path.join(
                         Path(__file__).parent.parent,
                         "img",
                         self.now,
-                        f"tendencies-{suffix}-{key}.svg"
+                        f"tendencies-{prefix}-{key}.pdf"
                     ),
-                    format = "svg"
-                )
-                shutil.copy(
-                    src = os.path.join(
-                        Path(__file__).parent.parent,
-                        "config.yml"
-                    ),
-                    dst = os.path.join(
-                        Path(__file__).parent.parent,
-                        "img",
-                        self.now,
-                        "config.yml"
-                    )
+                    format = "pdf"
                 )
 
+                # copy config
+                config_path = os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    self.now,
+                    "config.yml"
+                )
+                # but only if it hasn't been copied yet
+                if not os.path.exists(config_path):
+                    shutil.copy(
+                        src = os.path.join(
+                            Path(__file__).parent.parent,
+                            "config.yml"
+                        ),
+                        dst = config_path
+                    )
+
                 fig.clear()
+
+        self.plot_rsync(
+            save = save,
+            name_ext = name_ext
+        )
 
         if blocking:
             plt.show()
@@ -847,17 +857,133 @@ class DataHandler():
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        # shape: [neurons, time]
-        X = data["smoothed_rates"].cpu().numpy().T
+        # data shape: [neurons, times_steps]
+        X = data["smoothed_rates"].cpu().numpy()
 
         pca = PCA(n_components = 2)
         X_pca = pca.fit_transform(X)
 
-        axes.scatter(X_pca[:, 0], X_pca[:, 1])
+        # # Create a label-to-color mapping
+        # labels = np.array([f"Neuron_{i:03d}" for i in range(X.shape[0])])
+        # unique = np.unique(labels)
+        # label_to_idx = {label: idx for idx, label in enumerate(unique)}
+        # cvec = np.array([label_to_idx[label] for label in labels])
+
+        # # Use a colormap to assign colors
+        # # this is fucked up
+        # cmap = cm.viridis  # or any other colormap: 'plasma', 'inferno', 'Set1', etc.
+        # norm = plt.Normalize(vmin=0, vmax=len(unique) - 1)
+        # colors = cmap(norm(cvec))
+
+        axes.scatter(
+            X_pca[:, 0], 
+            X_pca[:, 1],
+            # c = colors
+        )
 
         axes.set_title("Neural population trajectory")
-        axes.set_xlabel("PC1")
+        axes.set_xlabel("PC1 (Explained Var:\n"
+                        f"X:{pca.explained_variance_[0] * 100}%, "
+                        f"Y:{pca.explained_variance_[1] * 100})")
         if self.ylabel:
             axes.set_ylabel("PC2")
 
         return axes
+
+    def plot_rsync(
+        self,
+        save: bool = True,
+        name_ext: str | None = None,
+    ) -> Figure:
+
+        # pre-execution checks
+        if not self._tendencies:
+            raise ValueError(
+                "Tendencies have not been calculated before. " \
+                "Please call measure_tendencies() before you call this function."
+            )
+
+        if save:
+            os.makedirs(
+                os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    self.now
+                ),
+                exist_ok = True
+            )
+            os.environ["MPLBACKEND"] = "pdf"
+
+
+        # get rsyncs in a neat array
+        rsyncs = []
+        cls = []
+        for i, sample in enumerate(self._tendencies.values()):
+            rsyncs.append([])
+            cls.append([])
+            for neuron in sample["measurements"]:
+                if neuron == "neuron0": continue
+                rsyncs[i].append(sample["measurements"][neuron]["rsync"].item())
+                cls[i].append(sample["class"].item())
+
+        rsyncs = np.array(rsyncs)
+        cls = np.array(cls)
+        unique_classes = np.unique(cls)
+
+        fig = plt.figure(
+            num = "rsync",
+            figsize = (5 * unique_classes.size, 10),
+            dpi = 300,
+            clear = True
+        )
+        axes = fig.subplot_mosaic(
+            mosaic = [
+                [f"class{i}" for i in unique_classes],
+                ["legend"    for _ in unique_classes]
+            ],
+            width_ratios = [1 for _ in unique_classes],
+            height_ratios = (13,1)
+        )
+
+        vmin = rsyncs.min()
+        vmax = rsyncs.max()
+
+        for i in unique_classes:
+            axes[f"class{i}"] = sns.heatmap(
+                rsyncs[cls[:, 0] == 0],
+                annot = True,
+                cmap = "viridis",
+                vmin = vmin,
+                vmax = vmax,
+                ax = axes[f"class{i}"],
+                cbar = True,
+                cbar_ax = axes["legend"],
+                cbar_kws = {"location": "bottom"}
+            )
+            axes[f"class{i}"].set_title(f"Class {i}")
+            axes[f"class{i}"].set_xlabel("Layers")
+            axes[f"class{i}"].set_ylabel("Samples")
+
+        # fig.colorbar(
+        #     last_im,                 # pyright: ignore[reportArgumentType]
+        #     cax = axes["legend"],
+        #     label = "RSyncs",
+        #     location = "bottom"
+        # )
+        fig.tight_layout()
+        fig.suptitle("RSync per Class and Layer")
+
+        if save:
+            prefix = name_ext if name_ext else self.now
+            fig.savefig(
+                os.path.join(
+                    Path(__file__).parent.parent,
+                    "img",
+                    self.now,
+                    f"rsyncs-{prefix}.pdf"
+                ),
+                format = "pdf"
+            )
+            fig.clear()
+
+        return fig

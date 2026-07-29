@@ -15,7 +15,8 @@ from itertools import product
 
 # type annotation
 import typing
-from typing import Literal, Callable, Sequence
+from typing import Literal
+from collections.abc import Callable, Sequence
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 
@@ -45,6 +46,7 @@ from matplotlib import colors
 from matplotlib import cm
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
+import seaborn
 from snntorch import spikeplot
 import torchinfo
 

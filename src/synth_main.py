@@ -74,6 +74,7 @@ def main(
     print("Training...")
     trainlist = []
     evallist = []
+    best_loss = torch.inf
     cur_loss = torch.inf
 
     for e in range(cfg_model["epochs"]):
@@ -98,7 +99,7 @@ def main(
             f"and Accuracy of {torch.tensor(acc).mean()}%"
         )
 
-        if model._best_loss < cur_loss:
+        if model._best_loss < best_loss:
             # update saved model
             print("Model performance improved!")
 
@@ -107,14 +108,8 @@ def main(
                     model,
                     f"{NOW}.pt"
                 )
-            cur_loss = model._best_loss
-
-        if model._best_loss != cur_loss and \
-            e == cfg_model["epochs"] - 1:
-            request_model_save(
-                model = model,
-                identifier = f"{NOW}-ep{e}.pt"
-            )
+            best_loss = model._best_loss
+        cur_loss = loss
 
         if args.record_hidden:
             # record data
@@ -142,6 +137,13 @@ def main(
 
             handler.disable()                   # pyright: ignore[reportPossiblyUnboundVariable]
             handler.clear_recorded_data()       # pyright: ignore[reportPossiblyUnboundVariable]
+
+
+    if model._best_loss != cur_loss:
+        request_model_save(
+            model = model,
+            identifier = f"{NOW}-ep{cfg_model["epochs"]}.pt"
+        )
 
     plot_epoch_losses(
         trainlist,
