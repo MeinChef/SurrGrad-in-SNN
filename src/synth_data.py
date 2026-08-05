@@ -15,7 +15,7 @@ from imports import (
 from imports import numpy as np
 
 DEBUG: bool = False
-CPU_COUNT: int = os.cpu_count() or 0
+CPU_COUNT: int = os.process_cpu_count() or 0
 
 # function definitions for parallel processing
 def _task(
