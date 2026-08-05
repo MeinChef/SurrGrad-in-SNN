@@ -12,6 +12,7 @@ import math
 import timeit
 import argparse
 from itertools import product
+from concurrent.futures import ProcessPoolExecutor
 
 # type annotation
 import typing
@@ -56,5 +57,7 @@ if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 elif torch.backends.mps.is_available():
     DEVICE = torch.device("mps")
-else: 
+else:
     DEVICE = torch.device("cpu")
+NUMPY_RNG = numpy.random.default_rng(42)
+TORCH_RNG = torch.manual_seed(42)

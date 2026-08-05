@@ -1,11 +1,6 @@
-from imports import torch
-from imports import math
+from imports import DEVICE, TORCH_RNG, Callable, Literal, math, torch, tqdm, warnings
 from imports import snntorch as snn
-from imports import tqdm
-from imports import Literal, Callable
-from imports import warnings
-from imports import DEVICE
-from misc import resolve_gradient, resolve_acc, resolve_loss, resolve_optim
+from misc import resolve_acc, resolve_gradient, resolve_loss, resolve_optim
 
 DEBUG = False
 
@@ -21,9 +16,6 @@ class SynthModel(torch.nn.Module):
 
         :param config: A dictionary with keys for setting up the SNN.
         :type config: dict, required
-
-        :param record: Whether to record the hidden layers during testing. Can be bool or None. Default is None
-        :type record: bool | None, optional
         """
 
         super().__init__()
@@ -52,7 +44,7 @@ class SynthModel(torch.nn.Module):
                 out_features = n[1],
                 device = DEVICE
             )
-            torch.nn.init.xavier_uniform_(layer.weight)
+            # torch.nn.init.xavier_uniform_(layer.weight)
             self.layers.append(layer)
 
             # leaky neurons
@@ -336,9 +328,26 @@ class SynthModel(torch.nn.Module):
         self, 
         x: torch.Tensor
     ) -> torch.Tensor:
-        T, B, N = x.shape
+        T, B, N = x.shape   # noqa: RUF059
         out = x.clone()
         left = 0
+
+        def check_candidates(
+            candy: torch.Tensor,
+            left: int,
+            valid_to: torch.Tensor
+        ) -> torch.Tensor:
+            # collision with existing spikes
+            # the +left translates again into the valid_to coordinate system
+            collide = ~torch.isin(candy + left, valid_to)
+
+            # duplicate values
+            unique, counts = candy.unique(return_counts = True)
+            duplicate = unique[counts > 1]
+            duplicate = torch.isin(candy, duplicate)
+
+            return collide | duplicate
+
 
         for b in range(B):
             for n in range(N):
@@ -356,7 +365,11 @@ class SynthModel(torch.nn.Module):
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
-                    torch.randperm(spike_idx.numel(), device = DEVICE)[:to_move]
+                    torch.randperm(
+                        spike_idx.numel(),
+                        generator = TORCH_RNG,
+                        device = DEVICE
+                    )[:to_move]
                 ]
                 # and add these to the valid positions
                 # the +left because they need to be in the same coordinate system as valid_to
@@ -368,6 +381,7 @@ class SynthModel(torch.nn.Module):
                     low = -self._jitter,
                     high = self._jitter + 1,
                     size = (to_move,),
+                    generator = TORCH_RNG,
                     device = DEVICE
                 )
 
@@ -376,19 +390,8 @@ class SynthModel(torch.nn.Module):
 
                 # thus we check if they collide with existing spikes 
                 # (excluding the ones that'll be removed)
-                def check_candidates(candy: torch.Tensor) -> torch.Tensor:
-                    # collision with existing spikes
-                    # the +left translates again into the valid_to coordinate system
-                    collide = ~torch.isin(candy + left, valid_to)
-
-                    # duplicate values
-                    unique, counts = candy.unique(return_counts = True)
-                    duplicate = unique[counts > 1]
-                    duplicate = torch.isin(candy, duplicate)
-
-                    return collide | duplicate
-
-                mask = check_candidates(candidates)
+                # definition of function above
+                mask = check_candidates(candidates, left, valid_to)
 
                 # mask is a positive mask, meaning True values are acceptable.
                 # negating the mask allows for checking if any values are not acceptable
@@ -405,12 +408,13 @@ class SynthModel(torch.nn.Module):
                             low = -self._jitter,
                             high = self._jitter + 1,
                             size = (int(mask.sum()),),
+                            generator = TORCH_RNG,
                             device = DEVICE
                         )
 
                         # update candidates and afterwards the filter
                         candidates[mask] = remove_idx[mask] + jitters
-                        mask = check_candidates(candidates)
+                        mask = check_candidates(candidates, left, valid_to)
 
                         # increase counter
                         counter += 1
@@ -430,7 +434,7 @@ class SynthModel(torch.nn.Module):
                                     # and set it
                                     candidates[i] = chosen
                                     break
-                        mask = check_candidates(candidates)
+                        mask = check_candidates(candidates, left, valid_to)
 
                     # cry if that did not work
                     if ~mask.any():
@@ -483,7 +487,7 @@ class SynthModel(torch.nn.Module):
     def _shuffle_layer_out(
         self, x: torch.Tensor
     ) -> torch.Tensor:
-        T, B, N = x.shape
+        T, B, N = x.shape   # noqa: RUF059
         out = x.clone()
 
         for b in range(B):
@@ -505,12 +509,20 @@ class SynthModel(torch.nn.Module):
 
                 # randomly choose spikes to remove
                 remove_idx = spike_idx[
-                    torch.randperm(spike_idx.numel(), device = DEVICE)[:to_move]
+                    torch.randperm(
+                        spike_idx.numel(),
+                        generator = TORCH_RNG,
+                        device = DEVICE
+                    )[:to_move]
                 ]
 
                 # randomly choose empty positions to activate
                 add_idx = empty_idx[
-                    torch.randperm(empty_idx.numel(), device = DEVICE)[:to_move]
+                    torch.randperm(
+                        empty_idx.numel(),
+                        generator = TORCH_RNG,
+                        device = DEVICE
+                    )[:to_move]
                 ]
 
                 # write to tensor
