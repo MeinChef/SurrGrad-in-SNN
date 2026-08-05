@@ -1,17 +1,20 @@
-from imports import yaml
-from imports import Path
-from imports import os
-from imports import shutil
-from imports import datetime
-from imports import functional
-from imports import torch
-from imports import plt
-from imports import seaborn as sns
+from imports import (
+    NOW,
+    PCA,
+    Axes,
+    Figure,
+    Path,
+    cm,
+    functional,
+    os,
+    pickle,
+    plt,
+    shutil,
+    torch,
+    yaml,
+)
 from imports import numpy as np
-from imports import Figure, Axes
-from imports import cm
-from imports import PCA
-from imports import NOW
+from imports import seaborn as sns
 from synth_model import SynthModel
 
 
@@ -172,6 +175,10 @@ def load_model(
     model.eval()
     return model
 
+#####################################################
+######### DataHandler Class Definition here #########
+#####################################################
+
 class DataHandler:
     """
     A Class for neatly wrapping an OutputMonitor.
@@ -181,7 +188,7 @@ class DataHandler:
         self,
         recorder: functional.probe.OutputMonitor,
         time_steps: int = 1000,
-        datapath: str = "data/",
+        datapath: str = "img/",
     ) -> None:
         """
         A Class for neatly wrapping an OutputMonitor.
@@ -196,8 +203,13 @@ class DataHandler:
         """
 
         self.recorder = recorder
-        self.path = datapath
-        self.now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.now = NOW
+        self.path = os.path.join(
+            Path(__file__).parent.parent,
+            datapath,
+            self.now
+        )
+
         self.time_steps = time_steps
         self._tendencies = {}
 
@@ -240,8 +252,14 @@ class DataHandler:
         :param data: A dataloader containing a (probably condensed)
                     set of Samples which should be evaluated.
         :type data: torch.DataLoader
+        :param loss: A list of losses that got calculated while recording the model.
+        :type loss: list
+        :param acc: A list of accuracies that got calculated while recording the model.
+        :type acc: list
+
         :returns: A Dictionary, with keys `sample-#`, which itself is a dictionary
                     containing the measurements (another dictionary) and the label.
+                    Additionally the keys "loss" and "accuracy" are saved, if they are passed.
         :rtype: dict
         """
 
@@ -473,51 +491,6 @@ class DataHandler:
     ### Fancy Plotting ###
     ######################
 
-    def visualise(
-        self,
-        blocking: bool = False
-    ) -> Figure:
-
-        # instantiate plot
-        fig, axes = plt.subplots(
-            nrows = 2,
-            ncols = len(self.recorder.monitored_layers),
-            squeeze = False,
-            sharex = 'all',
-            figsize = (14,5),
-            dpi = 200
-        )
-
-        # disentangle the data
-        # of structure:
-        # recorder
-        #   dict (with keys monitored_layers)
-        #       list (len time_steps)
-        #           tuple (spikes, membrane)
-        #               spikes / membrane ofc have a shape of [minibatch, out_features]
-        for i, layer in enumerate(self.recorder.monitored_layers):
-            # i'm only interested in the first sample for now
-            layerlist = self.recorder[layer][:self.time_steps]
-            spikes = torch.stack([x[0,:] for x, _ in layerlist]).T
-            membrane = torch.stack([x[0,:] for _, x in layerlist])
-
-            print(f"Layer: {layer}")
-            print(f"Spikes: Max: {spikes.max()}, Sum: {spikes.sum()}, Size: {spikes.shape}")
-            print(f"Membrane: Max: {membrane.max()}, Sum: {membrane.sum()}, Size: {membrane.shape}")
-
-            axes[0][i].spy(
-                spikes,
-                markersize = max(i * .2, 0.1)
-            )
-            axes[0][i].set_aspect('auto')
-            axes[1][i].plot(
-                membrane
-            )
-            axes[1][i].set_aspect('auto')
-        plt.tight_layout(pad = 2.0)
-        plt.show()
-        return fig
-
     def visualise_tendencies(
         self,
         save: bool = True,
@@ -550,21 +523,19 @@ class DataHandler:
         """
 
         if not self._tendencies:
-            raise ValueError(
+            raise UnboundLocalError(
                 "Tendencies have not been calculated before. " \
                 "Please call measure_tendencies() before you call this function."
             )
 
         if save:
             os.makedirs(
-                os.path.join(
-                    Path(__file__).parent.parent,
-                    "img",
-                    self.now
-                ),
+                self.path,
                 exist_ok = True
             )
             os.environ["MPLBACKEND"] = "pdf"
+
+        prefix = name_ext if name_ext else self.now
 
         FIG_SIZE = (23.4, 16.5) # A2 papersize
         DPI = 300
@@ -625,35 +596,40 @@ class DataHandler:
             fig.tight_layout()
 
             if save:
-                prefix = name_ext if name_ext else self.now
                 fig.savefig(
                     os.path.join(
-                        Path(__file__).parent.parent,
-                        "img",
-                        self.now,
+                        self.path,
                         f"tendencies-{prefix}-{key}.pdf"
                     ),
                     format = "pdf"
                 )
-
-                # copy config
-                config_path = os.path.join(
-                    Path(__file__).parent.parent,
-                    "img",
-                    self.now,
-                    "config.yml"
-                )
-                # but only if it hasn't been copied yet
-                if not os.path.exists(config_path):
-                    shutil.copy(
-                        src = os.path.join(
-                            Path(__file__).parent.parent,
-                            "config.yml"
-                        ),
-                        dst = config_path
-                    )
-
                 fig.clear()
+
+        if save:
+            # copy config
+            config_path = os.path.join(
+                self.path,
+                "config.yml"
+            )
+            # but only if it hasn't been copied yet
+            if not os.path.exists(config_path):
+                shutil.copy(
+                    src = os.path.join(
+                        Path(__file__).parent.parent,
+                        "config.yml"
+                    ),
+                    dst = config_path
+                )
+
+            # and pickle the measurements
+            with open(
+                os.path.join(self.path, f"measurements-{prefix}.pkl"),
+                "wb+"
+            ) as file:
+                pickle.dump(
+                    self._tendencies,
+                    file
+                )
 
         self.plot_rsync(
             save = save,
@@ -905,26 +881,22 @@ class DataHandler:
 
         if save:
             os.makedirs(
-                os.path.join(
-                    Path(__file__).parent.parent,
-                    "img",
-                    self.now
-                ),
+                self.path,
                 exist_ok = True
             )
             os.environ["MPLBACKEND"] = "pdf"
 
-
-        # get rsyncs in a neat array
+        # init empty lists
         rsyncs = []
         cls = []
-        for i, sample in enumerate(self._tendencies.values()):
-            rsyncs.append([])
-            cls.append([])
-            for neuron in sample["measurements"]:
-                if neuron == "neuron0": continue
-                rsyncs[i].append(sample["measurements"][neuron]["rsync"].item())
-                cls[i].append(sample["class"].item())
+
+        # and create lists that extract rsync and classes 
+        for sample in self._tendencies.values():
+            rsyncs.append([
+                neuron["rsync"].item()
+                for neuron in sample["measurements"].values()
+            ])
+            cls.append(sample["class"].item())
 
         rsyncs = np.array(rsyncs)
         cls = np.array(cls)
@@ -948,28 +920,22 @@ class DataHandler:
         vmin = rsyncs.min()
         vmax = rsyncs.max()
 
-        for i in unique_classes:
-            axes[f"class{i}"] = sns.heatmap(
-                rsyncs[cls[:, 0] == 0],
+        for c in unique_classes:
+            axes[f"class{c}"] = sns.heatmap(
+                rsyncs[cls == c],
                 annot = True,
                 cmap = "viridis",
                 vmin = vmin,
                 vmax = vmax,
-                ax = axes[f"class{i}"],
+                ax = axes[f"class{c}"],
                 cbar = True,
                 cbar_ax = axes["legend"],
                 cbar_kws = {"location": "bottom"}
             )
-            axes[f"class{i}"].set_title(f"Class {i}")
-            axes[f"class{i}"].set_xlabel("Layers")
-            axes[f"class{i}"].set_ylabel("Samples")
+            axes[f"class{c}"].set_title(f"Class {c}")
+            axes[f"class{c}"].set_xlabel("Layers")
+            axes[f"class{c}"].set_ylabel("Samples")
 
-        # fig.colorbar(
-        #     last_im,                 # pyright: ignore[reportArgumentType]
-        #     cax = axes["legend"],
-        #     label = "RSyncs",
-        #     location = "bottom"
-        # )
         fig.tight_layout()
         fig.suptitle("RSync per Class and Layer")
 
@@ -977,9 +943,7 @@ class DataHandler:
             prefix = name_ext if name_ext else self.now
             fig.savefig(
                 os.path.join(
-                    Path(__file__).parent.parent,
-                    "img",
-                    self.now,
+                    self.path,
                     f"rsyncs-{prefix}.pdf"
                 ),
                 format = "pdf"
@@ -987,3 +951,28 @@ class DataHandler:
             fig.clear()
 
         return fig
+
+    def save_metrics(
+        self,
+        loss: list | None,
+        acc: list | None,
+        name_ext: str | None = None
+    ) -> None:
+
+        prefix = name_ext if name_ext else self.now
+
+        self.metrics = {}
+        if loss:
+            self.metrics["loss"] = acc
+        if acc:
+            self.metrics["acc"] = acc
+
+        # and pickle the measurements
+        with open(
+            os.path.join(self.path, f"metrics-{prefix}.pkl"),
+            "wb+"
+        ) as file:
+            pickle.dump(
+                self.metrics,
+                file
+            )
