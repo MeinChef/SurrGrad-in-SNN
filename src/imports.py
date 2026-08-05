@@ -4,18 +4,15 @@ from pathlib import Path
 import warnings
 import time
 import datetime
-import gc
 import tqdm
 import re
 import shutil
 import math
-import timeit
 import argparse
 from itertools import product
 from concurrent.futures import ProcessPoolExecutor
 
 # type annotation
-import typing
 from typing import Literal
 from collections.abc import Callable, Sequence
 from matplotlib.figure import Figure
@@ -29,12 +26,9 @@ import pickle
 import numpy
 
 # high-level stuff
-import tonic
 import torch
-import torchvision
 import sklearn
 from sklearn.decomposition import PCA
-from torch.utils.tensorboard import SummaryWriter
 
 # snntorch, because it's stupid.
 import snntorch
@@ -49,7 +43,6 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 import seaborn
 from snntorch import spikeplot
-import torchinfo
 
 # some very global constants
 NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

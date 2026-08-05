@@ -1,0 +1,10 @@
+--find-links https://download.pytorch.org/whl/cpu
+torch
+snntorch
+matplotlib
+pyyaml
+numpy==2.5.0
+torch
+scikit-learn
+seaborn
+tqdm
