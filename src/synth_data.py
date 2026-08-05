@@ -1,19 +1,38 @@
+from imports import (
+    NOW,
+    NUMPY_RNG,
+    TORCH_RNG,
+    Figure,
+    Path,
+    ProcessPoolExecutor,
+    Sequence,
+    math,
+    os,
+    plt,
+    torch,
+    tqdm,
+)
 from imports import numpy as np
-from imports import math
-from imports import os
-from imports import torch
-from imports import plt
-from imports import tqdm
-from imports import Path
-from imports import Sequence
-from imports import Figure
-from imports import NOW
 
 DEBUG: bool = False
 CPU_COUNT: int = os.cpu_count() or 0
 
+# function definition for parallel processing
+def _task(
+        generator: "DataGenerator",
+        idx: int
+    ) -> np.ndarray:
+    # sample
+    sample = generator._generate_sample(
+        generator.isis[idx],
+        generator.rates[idx]
+    )
+    # shuffle if needed
+    if generator.shuffle > 0:
+        sample = generator._shuffle(sample)
+    return sample
 
-class DataGenerator():
+class DataGenerator:
     def __init__(
         self,
         time_steps: int,
@@ -23,7 +42,8 @@ class DataGenerator():
         max_isi: int = 10,
         min_rate: int = 5,
         max_rate: int = 20,
-        only_even: bool = True,
+        class_samples: int = 5000,
+        retries: int = 5,
         precision: type[np.generic] = np.float32
     ):
         """
@@ -56,8 +76,8 @@ class DataGenerator():
         :type min_rate: int, optional
         :param max_rate: Maximum firing rate, defaults to 10
         :type max_rate: int, optional
-        :param only_even: If only even firing rates and ISIs should be created
-        :type only_even: bool, optional
+        :param class_samples: Number of points to sample the parameters space from, defaults to 5000.
+        :type class_samples: int, optional
         :param precision: Numpy data type precision for samples, defaults to np.float32
         :type precision: numpy.dtype, optional
         """
@@ -69,77 +89,88 @@ class DataGenerator():
         self._max_isi  = max_isi
         self._min_rate = min_rate
         self._max_rate = max_rate
-        self._only_even = only_even
         self._precision = precision
+        self._retries = retries
 
-        # create a grid of all possible (isi, rate) pairs
-        value_grid = np.meshgrid(
-            np.arange(
-                self._min_rate, 
-                stop = self._max_rate + 1,
-                step = 2 if self._only_even else 1
-            ),
-            np.arange(
-                self._min_isi, 
-                stop = self._max_isi + 1,
-                step = 2 if self._only_even else 1
-            ),
-        )
+        rates, isis, classes = self._get_class_assignments(class_samples)
+        self.rates   = rates
+        self.isis    = isis
+        self.classes = classes
 
-        # create class assignment matrix (half of the values are class 0, half class 1)
-        class_assignment = self._class_assign_matrix(
-            value_grid
-        )
 
-        self.isis    = value_grid[1].flatten()
-        self.rates   = value_grid[0].flatten()
-        self.classes = class_assignment.flatten()
-
-        self.rng = np.random.default_rng()
-        self.torch_rng = torch.default_generator
-
-    def _class_assign_matrix(
-            self,
-            grid: Sequence[np.ndarray]
-    ) -> np.ndarray:
-
+    def _get_class_assignments(
+        self,
+        no_samples: int = 3000
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Function to create the class-assignment matrix.
-        Maps all indices within the matrix to a certain class.
+        Generate continuous (rate, isi) pairs with class assignment.
 
-        :param arr: Numpy array, with the shape of the value grid that it is being sampled from.
-        :type arr: numpy.ndarray, required
-        :returns: Numpy array containing the labels for each index.
-        :rtype: numpy.ndarray
+        Uses a linear boundary to assign classes:
+        - Class 0: isi > slope * rate + intercept
+        - Class 1: isi < slope * rate + intercept
+        - Ignore: near the boundary (margin)
         """
-        X, Y = grid
+        if no_samples % 2 == 1:
+            raise ValueError(f"no_samples must be even. Got {no_samples}.")
 
-        arr = np.zeros_like(
-            X,
-            dtype = np.int8
+        rates = NUMPY_RNG.uniform(
+            self._min_rate,
+            self._max_rate,
+            int(no_samples * 1.5)   # oversampling, because of invalidation later
+        )
+        isis = NUMPY_RNG.uniform(
+            self._min_isi,
+            self._max_isi,
+            int(no_samples * 1.5)   # oversampling, because of invalidation later
         )
 
-        # negative slope, like in Figure 1a of https://arxiv.org/pdf/2507.16043
+        # define line to separate classes
+        x0 = self._min_rate
+        x1 = self._max_rate
 
-        x0 = X.min()
-        x1 = X.max()
-
-        y0 = Y.min() + (2/3) * (Y.max() - Y.min())
-        y1 = Y.min() + (1/3) * (Y.max() - Y.min())
+        y0 = self._min_isi + (2/3) * (self._max_isi - self._min_isi)
+        y1 = self._min_isi + (1/3) * (self._max_isi - self._min_isi)
 
         slope = (y1 - y0) / (x1 - x0)
         intercept = y0 - slope * x0
 
-        line = (slope * X + intercept)
+        line = (slope * rates + intercept)
 
-        # margin
-        margin = 3
-        boundary = np.abs(Y - line) <= margin
+        # margin around the line
+        margin = 2.5
+        boundary = np.abs(isis - line) <= margin
 
-        arr[boundary] = -1
-        arr[Y > line + margin] = 1
 
-        return arr
+        # assign classes
+        classes = np.zeros(int(no_samples * 1.5), dtype = np.int8)
+        classes[isis > line + margin] = 1
+        classes[isis < line - margin] = 0
+
+        # map spaciatl corrdinates to features
+        rates = self._linear_map_to_half_steps(
+            rates,
+            rates.min(), rates.max(),
+            self._min_rate, self._max_rate,
+            step = 0.1
+        )
+        isis = self._linear_map_to_half_steps(
+            isis,
+            isis.min(), isis.max(),
+            self._min_isi, self._max_isi, 
+            step = 1
+        )
+
+        # filter out samples generated in boundary zone if needed
+        # exact amount of possible points is not relevant,
+        # thus no limitation to only [no_samples]
+        valid_mask = ~boundary
+        rates = rates[valid_mask]
+        isis = isis[valid_mask]
+        classes = classes[valid_mask]
+
+        # check that nothing went wrong
+        assert rates.shape == isis.shape and rates.shape == classes.shape
+        return rates, isis, classes
 
     def _generate_sample(
         self,
@@ -163,10 +194,11 @@ class DataGenerator():
         """
 
         # calculate number of spike-pairs, given in [source]
-        spk_pairs = math.floor(
-            (rate * (self.time_steps / 1000))
-            / 2
-        )
+        spk_pairs = int(np.round(
+            rate * (self.time_steps / 1000)
+        ).item())
+        # cast isi to be an integer
+        isi = max(1, int(isi))
 
         # preallocate the resulting array
         out = np.zeros(
@@ -175,57 +207,68 @@ class DataGenerator():
         )
 
         for i in range(self.neurons):
-            # array with valid start positions of a spike pair
-            mask = np.ones(
-                (self.time_steps - isi,),
-                dtype = bool
-            )
-            mask_max_idx = mask.shape[0] - 1
 
-            # save samples somewhere
-            all_samples = np.zeros(
-                (0,),
-                dtype = np.int16
-            )
+            success = False
+            for j in range(self._retries):
+                # array with valid start positions of a spike pair
+                mask = np.ones(
+                    (self.time_steps - isi,),
+                    dtype = bool
+                )
+                mask_max_idx = mask.shape[0] - 1
 
-            cur_no = 0
-            while cur_no < spk_pairs:
-                # break if no valid positions are left
-                if mask.sum() == 0:
-                    print("Warning: Did not generate all spike pairs, no valid positions left!")
-                    print(f"ISI: {isi} and Rate {rate}. Wanted to generate {spk_pairs} spike pairs, but could only fit {len(all_samples)}.\n")
+                # save samples somewhere
+                all_samples = np.zeros(
+                    (0,),
+                    dtype = np.int16    # for some reason int8 are slower
+                )
+
+                cur_no = 0
+                while cur_no < spk_pairs:
+                    # break if no valid positions are left
+                    if mask.sum() == 0:
+                        success = False
+                        break
+
+
+                    # select a bunch of random starting positions
+                    sample = np.flatnonzero(mask)
+                    NUMPY_RNG.shuffle(
+                        sample
+                    )
+                    sample = sample[:spk_pairs - cur_no]
+
+                    # sort them if this is the first iteration
+                    if len(all_samples) == 0:
+                        sample.sort()
+
+                    # put them in the sorted all_samples array
+                    idx = np.searchsorted(all_samples, sample)
+                    all_samples = np.insert(all_samples, idx, sample)
+
+                    # check if there are any values created that are in invalid positions
+                    tmp_mask = np.r_[True, np.diff(all_samples) >= isi]
+                    all_samples = all_samples[tmp_mask]
+
+                    # update cur_no and mask
+                    cur_no = all_samples.shape[0]
+
+                    # hacky way of setting the mask to wrong
+                    idx = sample[:,None] + np.arange(isi)
+                    mask[idx.clip(max = mask_max_idx)] = False
+                    success = True
+
+                if success:
+                    # set samples
+                    out[all_samples, i] = 1
+                    out[all_samples + isi, i] = 1
                     break
 
+                if j >= self._retries - 1:
+                    print("Warning: Did not generate all spike pairs, no valid positions left!")
+                    print(f"ISI: {isi} and Rate {rate}. Wanted to generate {spk_pairs} spike pairs, but could only fit {len(all_samples)}.\n")
 
-                # select a bunch of random starting positions
-                sample = np.flatnonzero(mask)
-                self.rng.shuffle(
-                    sample
-                )
-                sample = sample[:spk_pairs - cur_no]
 
-                # sort them if this is the first iteration
-                if len(all_samples) == 0:
-                    sample.sort()
-
-                # put them in the sorted all_samples array
-                idx = np.searchsorted(all_samples, sample)
-                all_samples = np.insert(all_samples, idx, sample)
-
-                # check if there are any values created that are in invalid positions
-                tmp_mask = np.r_[True, np.diff(all_samples) >= isi]
-                all_samples = all_samples[tmp_mask]
-
-                # update cur_no and mask
-                cur_no = all_samples.shape[0]
-
-                # hacky way of setting the mask to wrong
-                idx = sample[:,None] + np.arange(isi)
-                mask[idx.clip(max = mask_max_idx)] = False
-
-            # set samples
-            out[all_samples, i] += 1
-            out[all_samples + isi, i] += 1
         return out
 
     def _shuffle(
@@ -257,12 +300,12 @@ class DataGenerator():
 
             # jumble spikes and select the first to_move ones 
             # (same as random choice without replacement, but faster)
-            selected_spikes = self.rng.permutation(
+            selected_spikes = NUMPY_RNG.permutation(
                 spikes[0][spk_mask]
             )[:to_move]
 
             # generate new position from valid ones
-            new_positions = self.rng.permutation(
+            new_positions = NUMPY_RNG.permutation(
                 valid_to[0][move_mask]
             )[:to_move]
 
@@ -274,9 +317,27 @@ class DataGenerator():
         return sample
 
 
+    @staticmethod
+    def _linear_map_to_half_steps(
+        value: np.ndarray,
+        old_min: float,
+        old_max: float,
+        new_min: float,
+        new_max: float,
+        step: float = 1.0
+    ) -> np.ndarray:
+        """
+        Map values from one range to another with step discretization.
+        """
+        mapped = (value - old_min) / (old_max - old_min) \
+                * (new_max - new_min) + new_min
+        stepped = np.round(mapped / step) * step
+        return np.clip(stepped, new_min, new_max)
+
     def generate_samples(
         self,
         no_samples: int = 3000,
+        workers: int | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Generates samples and labels alongside them.\n
@@ -316,45 +377,81 @@ class DataGenerator():
         for i in range(2):
             # generate samples by drawing an index from the class assignment array
             # where the class is the specified one 
-            indices = self.rng.choice(
+            indices = NUMPY_RNG.choice(
                 np.nonzero(self.classes == i)[0],
                 size = samples_per_class,
                 replace = True
             )
-            for j, idx in tqdm.tqdm(enumerate(indices)):
-                # generate sample with self.isis[idx] and self.rates[idx]
-                # this works, because all arrays got flattened
-                sample = self._generate_sample(
-                    isi = int(self.isis[idx]),
-                    rate = int(self.rates[idx])
-                )
 
-                # some debug print statements for roughly checking whether the shuffling worked
-                if DEBUG:
-                    sample_sum = [sample[:,i].sum() for i in range(self.neurons)]
-                    print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
-                    print(f"Sample sum per neuron: {sample_sum}.\n" +
-                          f"Expected sum per neuron: {self.rates[idx] * self.neurons * (self.time_steps / 1000) * 2}")
+            if workers is not None:
+                # fancy multithreading
+                with ProcessPoolExecutor(max_workers = workers) as executor:
+                    # create todolist
+                    todos = [
+                        executor.submit(_task, self, i) for i in indices
+                    ]
 
-                if self.shuffle > 0:
-                    sample = self._shuffle(
-                        sample = sample,
-                    )
+                    for j, future in tqdm.tqdm(
+                        iterable = enumerate(todos),
+                        total = len(todos),
+                        desc = f"Generating Samples for Class {i}"
+                    ):
+                        # get result
+                        sample = future.result()
 
-                    if DEBUG:
-                        print("After shuffling:\n" +
-                              f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
-                              "Expected to match sample sum per neuron.\n" +
-                              f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"               # type: ignore
-                              )
+                        # store samples and labels
+                        # i * len(indices) specifies the initial offset from the array start
+                        # as in: is it class one (saved from 0 - len(indices)) or is it class two
+                        # which is saved from len(indices) to -1
+                        # the +j is the offset from the start of each class.
+                        samples[i * samples_per_class + j] = sample
+                    labels[i * samples_per_class : (i+1) * samples_per_class] = i
 
-                # store samples and labels
-                # i * len(indices) specifies the initial offset from the array start
-                # as in: is it class one (saved from 0 - len(indices)) or is it class two
-                # which is saved from len(indices) to -1
-                # the +j is the offset from the start of each class.
-                samples[i * len(indices) + j] = sample
-            labels[i * len(indices) : (i + 1) * len(indices)] = i
+
+            else:
+                # standard single-threaded
+                for j, idx in tqdm.tqdm(
+                        iterable = enumerate(indices),
+                        total = len(indices),
+                        desc = f"Generating Samples for Class {i}"
+                    ):
+                    # generate sample and save
+                    # more info see above
+                    sample = _task(self, idx)
+                    samples[i * samples_per_class + j] = sample
+                labels[i * samples_per_class : (i+1) * samples_per_class] = i
+
+
+            # for j, idx in tqdm.tqdm(enumerate(indices)):
+            #     # generate sample with self.isis[idx] and self.rates[idx]
+            #     # this works, because all arrays got flattened
+            #     sample = self._generate_sample(
+            #         isi = int(self.isis[idx]),
+            #         rate = int(self.rates[idx])
+            #     )
+
+            #     # some debug print statements for roughly checking whether the shuffling worked
+            #     if DEBUG:
+            #         sample_sum = [sample[:,i].sum() for i in range(self.neurons)]
+            #         print(f"Rate: {self.rates[idx]}, ISI: {self.isis[idx]}, Class: {self.classes[idx]}")
+            #         print(f"Sample sum per neuron: {sample_sum}.\n" +
+            #               f"Expected sum per neuron: {self.rates[idx] * self.neurons * (self.time_steps / 1000) * 2}")
+
+            #     if self.shuffle > 0:
+            #         sample = self._shuffle(
+            #             sample = sample,
+            #         )
+
+            #         if DEBUG:
+            #             print("After shuffling:\n" +
+            #                   f"Sample sum per neuron: {[sample[:,i].sum() for i in range(self.neurons)]}.\n" +
+            #                   "Expected to match sample sum per neuron.\n" +
+            #                   f"{[sample[:,i].sum() for i in range(self.neurons)] == sample_sum}"               # type: ignore
+            #                   )
+
+
+            #     samples[i * len(indices) + j] = sample
+            # labels[i * len(indices) : (i + 1) * len(indices)] = i
 
         return samples, labels
 
@@ -398,7 +495,10 @@ class DataGenerator():
             raise ValueError(f"train_split is too large. Can be at most 1. Actual: {train_split}")
 
         # generate the samples
-        data, labels = self.generate_samples(no_samples = no_samples)
+        data, labels = self.generate_samples(
+            no_samples = no_samples,
+            workers = workers
+        )
 
         # put them in a dataset with the correct dtype
         ds = torch.utils.data.TensorDataset(
@@ -433,7 +533,7 @@ class DataGenerator():
             train, test = torch.utils.data.random_split(
                 ds,
                 [train_split, 1 - train_split],
-                self.torch_rng
+                generator = TORCH_RNG
             )
 
             # and again Dataloader
