@@ -1,13 +1,11 @@
+from data import DataHandler, load_config, request_model_save, save_model
+from imports import NOW, argparse, functional, torch
+from imports import snntorch as snn
+from misc import check_working_directory
 from synth_data import DataGenerator
 from synth_model import SynthModel
-from data import load_config, save_model, request_model_save, DataHandler
-from misc import check_working_directory
-from visualisation import plot_epoch_losses
-from imports import NOW
-from imports import argparse
-from imports import functional
-from imports import torch
-from imports import snntorch as snn
+from tracker import MetricsTracker
+
 
 def main(
     args: argparse.Namespace
@@ -24,7 +22,7 @@ def main(
         max_isi = cfg_data["max_isi"],
         min_rate = cfg_data["min_rate"],
         max_rate = cfg_data["max_rate"],
-        only_even = cfg_data["only_even"]
+        # only_even = cfg_data["only_even"]
         # precision = np.float32
     )
 
@@ -46,8 +44,11 @@ def main(
         handler = DataHandler(
             recorder = recorder,
             time_steps = cfg_data["time_steps"]["val"],
-            datapath = "data/"
+            datapath = "img/"
         )
+
+    # and some simple loss/acc tracker
+    tracker = MetricsTracker()
 
     print("Done!")
 
@@ -72,32 +73,23 @@ def main(
     print("Done!")
 
     print("Training...")
-    trainlist = []
-    evallist = []
+
     best_loss = torch.inf
     cur_loss = torch.inf
 
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
 
+        # training
         loss, acc = model.fit(train)
-        trainlist.append(loss)
+        tracker.update_train(loss, acc)
 
+        # validation
         loss, acc = model.evaluate(
             data = test
         )
-        evallist.append(loss)
-
-        # loss, acc = model.augmented_eval(
-        #     data = test,
-        #     augment = "jitter",
-        #     jitter = 20,
-        #     only_nth_layer = 1
-        # )
-        print(
-            f"Loss of {torch.tensor(loss).mean()} "
-            f"and Accuracy of {torch.tensor(acc).mean()}%"
-        )
+        tracker.update_val(loss, acc)
+        tracker.announce()
 
         if model._best_loss < best_loss:
             # update saved model
@@ -109,21 +101,21 @@ def main(
                     f"{NOW}.pt"
                 )
             best_loss = model._best_loss
-        cur_loss = loss
+        cur_loss = torch.tensor(loss).mean()
 
         if args.record_hidden:
             # record data
             handler.enable()                    # pyright: ignore[reportPossiblyUnboundVariable]
 
             if args.augment:
-                _, _ = model.augmented_eval(
+                rec_loss, rec_acc = model.augmented_eval(
                     data = curated,
                     augment = args.augment,
                     jitter = cfg_model["jitter"],
                     only_nth_layer = cfg_model["augmented_layer"]
                 )
             else:
-                _, _ = model.evaluate(
+                rec_loss, rec_acc = model.evaluate(
                     data = curated
                 )
 
@@ -132,6 +124,10 @@ def main(
                 curated
             )
             handler.visualise_tendencies(       # pyright: ignore[reportPossiblyUnboundVariable]
+                name_ext = f"{NOW}-ep{e}"
+            )
+            handler.save_metrics(               # pyright: ignore[reportPossiblyUnboundVariable]
+                rec_loss, rec_acc,
                 name_ext = f"{NOW}-ep{e}"
             )
 
@@ -145,16 +141,9 @@ def main(
             identifier = f"{NOW}-ep{cfg_model["epochs"]}.pt"
         )
 
-    plot_epoch_losses(
-        trainlist,
-        train = True,
-        save = True
-    )
-    plot_epoch_losses(
-        evallist,
-        train = False,
-        save = True
-    )
+    tracker.plot(train = True)
+    tracker.plot(train = False)
+    tracker.save()
 
     print("Success!")
     return True

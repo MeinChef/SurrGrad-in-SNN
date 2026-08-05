@@ -5,13 +5,13 @@ data:
     val: 1000
   no_samples: 100000
   shuffle_spikes: 0.0
-  min_isi: 20
+  min_isi: 1
   max_isi: 50
   min_rate: 2
   max_rate: 10
   only_even: True
 
-  batch_size: 1024
+  batch_size: 128
   shuffle: True
   train_split: 0.7
   prefetch: 16
@@ -37,7 +37,7 @@ model:
       # mse_membrane: [arg: on_target, off_target]
       # ttfs: [arg: alpha]
       # mean_ce: [arg: intermediate_reduction]
-    type: "mean_ce" # for this run it's a dummy value, actually used the FirstSpikeLoss defined in loss.py
+    type: "mean_ce" # mean over time, then CE loss
     correct_rate: 0.5
     incorrect_rate: 0
     inverse: "negate" # either reciprocal or negate, default: negate
@@ -61,7 +61,7 @@ model:
   optimiser:
     # available optimisers: adam
     type: "adam"
-    learning_rate: 0.001
+    learning_rate: 0.002
     betas: [0.9, 0.99]
     weight_decay: 0.0001
 
@@ -77,11 +77,11 @@ model:
     type: "fast_sigmoid"
     alpha: null
     beta: null
-    slope: 25
+    slope: 100
     threshold: null
 
   # training parameters
-  epochs: 15
+  epochs: 1000
   # partial training/testing in minibatches
   partial_training: -1
   partial_testing: -1
