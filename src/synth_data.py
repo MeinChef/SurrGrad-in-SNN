@@ -17,7 +17,7 @@ from imports import numpy as np
 DEBUG: bool = False
 CPU_COUNT: int = os.cpu_count() or 0
 
-# function definition for parallel processing
+# function definitions for parallel processing
 def _task(
         generator: "DataGenerator",
         idx: int
@@ -31,6 +31,15 @@ def _task(
     if generator.shuffle > 0:
         sample = generator._shuffle(sample)
     return sample
+
+# function for returning the batches with time_first
+def _time_first_batch(batch):
+    xs, ys = zip(*batch)
+
+    xs = torch.stack(xs).permute(1, 0, -1).contiguous()
+    ys = torch.stack(ys)
+
+    return xs, ys
 
 class DataGenerator:
     def __init__(
@@ -505,15 +514,6 @@ class DataGenerator:
             torch.from_numpy(data),
             torch.from_numpy(labels.astype(np.int64))
         )
-
-        # function for returning the batches with time_first
-        def _time_first_batch(batch):
-            xs, ys = zip(*batch)
-
-            xs = torch.stack(xs).permute(1, 0, -1).contiguous()
-            ys = torch.stack(ys)
-
-            return xs, ys
 
         if train_split == 0:
             # and make a nice dataloader out of it
