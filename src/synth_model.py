@@ -185,7 +185,11 @@ class SynthModel(torch.nn.Module):
         self.train()
 
         # training loop
-        for i, (x, target) in tqdm.tqdm(enumerate(data)):
+        for i, (x, target) in tqdm.tqdm(
+            iterable = enumerate(data),
+            total = len(data),
+            desc = "Training Batches"
+        ):
             # check if the training has been already done to the specified amount
             if i == self._partial_train:
                 break
@@ -249,7 +253,11 @@ class SynthModel(torch.nn.Module):
 
         # test loop
         with torch.no_grad():
-            for i, (x, target) in tqdm.tqdm(enumerate(data)):
+            for i, (x, target) in tqdm.tqdm(
+                iterable = enumerate(data),
+                total = len(data),
+                desc = "Training Batches"
+            ):
                 # check if the training has been already done to the specified amount
                 if i == self._partial_test:
                     break
