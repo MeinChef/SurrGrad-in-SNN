@@ -76,6 +76,7 @@ def main(
 
     best_loss = torch.inf
     cur_loss = torch.inf
+    cur_patience = 0
 
     for e in range(cfg_model["epochs"]):
         print(f"Epoch: {e}")
@@ -91,6 +92,7 @@ def main(
         tracker.update_val(loss, acc)
         tracker.announce()
 
+        # save model if it got better
         if model._best_loss < best_loss:
             # update saved model
             print("Model performance improved!")
@@ -101,6 +103,15 @@ def main(
                     f"{NOW}.pt"
                 )
             best_loss = model._best_loss
+
+        # or increase patience value if it didn't
+        eps = 1e-5
+        if best_loss <= cur_loss + eps and best_loss >= cur_loss - eps:
+            cur_patience += 1
+        if cur_patience >= cfg_model["patience"]:
+            break
+
+        # and update the current loss
         cur_loss = torch.tensor(loss).mean()
 
         if args.record_hidden:
@@ -134,6 +145,8 @@ def main(
             handler.disable()                   # pyright: ignore[reportPossiblyUnboundVariable]
             handler.clear_recorded_data()       # pyright: ignore[reportPossiblyUnboundVariable]
 
+        if args.save_model:
+            tracker.save(force = True)
 
     if model._best_loss != cur_loss:
         request_model_save(

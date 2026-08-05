@@ -42,7 +42,8 @@ class MetricsTracker:
         self.val_acc.append(acc)
 
     def save(
-        self
+        self,
+        force: bool = False
     ) -> None:
 
         trainfile = os.path.join(self.path, "train-metrics.pkl")
@@ -53,7 +54,15 @@ class MetricsTracker:
                     file
                 )
         else:
-            warnings.warn(f"File {trainfile} already exists, not saving metrics again.")
+            if force:
+                # save anyway
+                with open(trainfile, "wb+") as file:
+                    pickle.dump(
+                        (self.train_loss, self.train_acc),
+                        file
+                    )
+            else:
+                warnings.warn(f"File {trainfile} already exists, not saving metrics again.")
 
         testfile = os.path.join(self.path, "test-metrics.pkl")
         if not os.path.exists(testfile):
@@ -63,7 +72,14 @@ class MetricsTracker:
                     file
                 )
         else:
-            warnings.warn(f"File {testfile} already exists, not saving metrics again.")
+            if force:
+                with open(testfile, "wb+") as file:
+                    pickle.dump(
+                        (self.val_loss, self.val_acc),
+                        file
+                    )
+            else:
+                warnings.warn(f"File {testfile} already exists, not saving metrics again.")
 
     def load(
         self
