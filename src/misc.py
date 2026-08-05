@@ -1,12 +1,6 @@
-from imports import os
-from imports import warnings
-from imports import surrogate
-from imports import Callable
-from imports import torch
-from imports import re
-from imports import functional
+from imports import Callable, functional, os, re, surrogate, torch, warnings
+from loss import FirstSpikeLoss, MeanCELoss, SpikemaxLoss
 from surrogate import stable_sigmoid
-from loss import FirstSpikeLoss, MeanCELoss
 
 
 # check if the cwd is correct, try to change if Git-Repo exists in cwd.
@@ -75,7 +69,7 @@ def resolve_loss(config: dict) -> Callable:
             reduction = config["reduction"] 
         )
     elif name == "ce_max_membrane":
-        return functional.loss.ce_max_membrane_loss(            
+        return functional.loss.ce_max_membrane_loss(
             reduction = config["reduction"] 
         )
     elif name == "ce_rate":
@@ -124,6 +118,8 @@ def resolve_loss(config: dict) -> Callable:
             intermediate_reduction = config["intermediate_reduction"],
             reduction = config["reduction"]
         )
+    elif name == "spikemax":
+        return SpikemaxLoss()
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 

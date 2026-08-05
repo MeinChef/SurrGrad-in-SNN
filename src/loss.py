@@ -58,88 +58,6 @@ class FirstSpikeLoss(torch.nn.Module):
         loss = (expected - ideal).square()
         return loss.mean()
 
-
-
-
-    #     weights = torch.exp(-self.alpha * t).view(T, 1, 1)
-
-    #     score = (first * weights).sum(0)       # [B,2]
-
-    #     target_score = score.gather(
-    #         1,
-    #         target[:, None]
-    #     ).squeeze(1)
-
-    #     wrong_score = score.gather(
-    #         1,
-    #         (1 - target)[:, None]
-    #     ).squeeze(1)
-
-    #     classification = -torch.log(target_score + self.eps)
-
-    #     # wrong_penalty = wrong_score
-
-    #     # Penalise neither neuron ever spiking
-    #     any_spike = spikes.sum(dim=(0, 2))
-    #     no_spike = (1 - any_spike).clamp(min=0)
-
-    #     loss = (
-    #         classification
-    #         + self.wrong_weight * wrong_score
-    #         + self.no_spike_weight * no_spike
-    #     )
-    #     if loss.isnan().any():
-    #         breakpoint()
-    #     return loss.mean()
-
-    # non differentiable because of nonzero, ayyyy
-    # def forward(
-    #     self,
-    #     spikes: torch.Tensor,
-    #     target: torch.Tensor,
-    # ) -> torch.Tensor:
-
-    #     T, B, N = spikes.shape
-    #     assert N == 2
-
-    #     # off_target is T if -1
-    #     if self.off_target == -1:
-    #         self.off_target = T
-
-    #     times, batches, classes = spikes.nonzero(as_tuple=True)
-
-    #     # First spike times, initialized to T ("no spike")
-    #     first = torch.full(
-    #         (B * N,),
-    #         self.off_target,
-    #         device = spikes.device,
-    #         dtype = times.dtype,
-    #     )
-
-    #     # flatten the indices manually
-    #     flat_idx = batches * N + classes
-
-    #     first.scatter_reduce_(
-    #         0,                  # reduce the first dimension, B
-    #         flat_idx,           # tell where the values go
-    #         times,              # the values to put in there
-    #         reduce = "amin",    # oh, and apply the argmin operation
-    #         include_self = True,
-    #     )
-
-    #     # reshape to be unflattened
-    #     first = first.view(B, N)
-
-    #     # make the ideal values, and for every batch the target should be 0
-    #     ideal = torch.full_like(first, self.off_target)
-    #     ideal[torch.arange(B, device = spikes.device), target] = self.on_target
-
-    #     # (M)SE calculation
-    #     loss = (ideal - first).float().square()
-
-    #     # and reduction (M)
-    #     return loss.mean()
-
 class MeanCELoss(torch.nn.Module):
     def __init__(
         self,
@@ -165,3 +83,31 @@ class MeanCELoss(torch.nn.Module):
         prediction = self._inter_reduct(prediction, dim = 0)
 
         return self._CE(prediction, target)
+
+class SpikemaxLoss(torch.nn.Module):
+    def __init__(self, window_size=30, tau_s=1.0, tau_r=1.0):
+        super(SpikemaxLoss, self).__init__()
+        self.window_size = window_size
+        self.tau_s = tau_s
+        self.tau_r = tau_r
+
+    def forward(self, outputs, targets):
+        sequence_length, batch_size, num_classes = outputs.size()
+
+        # Calculate spike count for each neuron in the sliding window
+        spike_counts = []
+        for t in range(sequence_length):
+            if t < self.window_size:
+                spike_count = torch.sum(outputs[:, :t+1], dim=1)
+            else:
+                spike_count = torch.sum(outputs[:, t-self.window_size:t+1], dim=1)
+            spike_counts.append(spike_count.unsqueeze(1))
+        spike_counts = torch.cat(spike_counts, dim=1)
+
+        # Calculate global probability estimates
+        global_probs = spike_counts / self.window_size
+
+        # Calculate negative log-likelihood loss
+        loss = -torch.mean(targets * torch.log(global_probs + 1e-8))
+
+        return loss
