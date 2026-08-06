@@ -4,7 +4,7 @@ from imports import (
     Axes,
     Figure,
     Path,
-    cm,
+    matplotlib,
     functional,
     os,
     pickle,
@@ -744,7 +744,7 @@ class DataHandler:
 
         rates = data["smoothed_rates"].cpu().numpy()
 
-        cmap = cm.get_cmap("viridis")
+        cmap = matplotlib.colormaps["viridis"]
         im = axes.imshow(
             rates,
             aspect = 'auto',

@@ -36,9 +36,9 @@ from snntorch import functional
 from snntorch import surrogate
 
 # visualization
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import colors
-from matplotlib import cm
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 import seaborn
