@@ -25,7 +25,7 @@ def check_working_directory() -> bool:
         else:
             warnings.warn("Could not find the folder SurrGrad-in-SNN in your current working directory. "
                           "No guarantees for working code from this point on.\n"
-                          "Proceeding...")   
+                          "Proceeding...")
             return False
 
 def resolve_gradient(config: dict) -> Callable:
@@ -145,7 +145,7 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
 
     :param config: config dictionary
     :type config: dict
-    
+
     :param params: parameters of the model
     :type params: ParamT
 
@@ -167,7 +167,7 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
 def make_path(path: str | list[str]) -> os.PathLike:
     """
     Function for creating cross-os-compatible paths from strings.
-    
+
     :param path: String to be converted to os.PathLike
     :type path: str or list of str, required
     :return: Path in the correct format for the current OS

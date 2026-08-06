@@ -15,14 +15,14 @@ def main(
     # initialise datagenerator
     print("Initialising Classes...")
     datagen = DataGenerator(
-        time_steps = cfg_data["time_steps"]["val"],
-        shuffle = cfg_data["shuffle_spikes"],
-        neurons = cfg_data["neurons"]["val"],
-        min_isi = cfg_data["min_isi"],
-        max_isi = cfg_data["max_isi"],
-        min_rate = cfg_data["min_rate"],
-        max_rate = cfg_data["max_rate"],
-        # only_even = cfg_data["only_even"]
+        time_steps = cfg_data.get("time_steps", {"val": 1000})["val"],
+        shuffle    = cfg_data.get("shuffle_spikes", 0.0),
+        neurons    = cfg_data.get("neurons", {"val": 10})["val"],
+        min_isi    = cfg_data.get("min_isi", 1),
+        max_isi    = cfg_data.get("max_isi", 50),
+        min_rate   = cfg_data.get("min_rate", 2),
+        max_rate   = cfg_data.get("max_rate", 10),
+        # only_even = cfg_data.get("only_even", True)
         # precision = np.float32
     )
 
@@ -43,7 +43,7 @@ def main(
         # and wrap it for more functions
         handler = DataHandler(
             recorder = recorder,
-            time_steps = cfg_data["time_steps"]["val"],
+            time_steps = cfg_data.get("time_steps", {"val": 1000})["val"],
             datapath = "img/"
         )
 
@@ -53,22 +53,22 @@ def main(
     print("Done!")
 
     # generate dataset
-    print(f"Generating Data. ({cfg_data['no_samples']} total)...")
+    print(f"Generating Data. ({cfg_data.get('no_samples', 1e5)} total)...")
     train, test = datagen.generate_dataset(
-        no_samples = cfg_data["no_samples"],
-        batch_size = cfg_data["batch_size"],
-        train_split = cfg_data["train_split"],
-        shuffle = cfg_data["shuffle"],
-        prefetch = cfg_data["prefetch"],
+        no_samples  = cfg_data.get("no_samples", 1e5),
+        batch_size  = cfg_data.get("batch_size", 512),
+        train_split = cfg_data.get("train_split", 0.7),
+        shuffle     = cfg_data.get("shuffle", True),
+        prefetch    = cfg_data.get("prefetch", 16),
     )
     datagen.visualise_classes()
 
     curated = datagen.generate_dataset(
-        no_samples = cfg_model["samples"],
-        batch_size = cfg_model["samples"],
+        no_samples  = cfg_model.get("samples", 20),
+        batch_size  = cfg_model.get("samples", 20),
         train_split = 0,
-        shuffle = False,
-        prefetch = cfg_data["prefetch"],
+        shuffle     = False,
+        prefetch    = cfg_data.get("prefetch", 1),
     )[0]
     print("Done!")
 
@@ -78,7 +78,7 @@ def main(
     cur_loss = torch.inf
     cur_patience = 0
 
-    for e in range(cfg_model["epochs"]):
+    for e in range(cfg_model.get("epochs", 100)):
         print(f"Epoch: {e}")
 
         # training
@@ -108,7 +108,7 @@ def main(
         eps = 1e-5
         if best_loss <= cur_loss + eps and best_loss >= cur_loss - eps:
             cur_patience += 1
-        if cur_patience >= cfg_model["patience"]:
+        if cur_patience >= cfg_model.get("patience", 5):
             break
 
         # and update the current loss
@@ -122,8 +122,8 @@ def main(
                 rec_loss, rec_acc = model.augmented_eval(
                     data = curated,
                     augment = args.augment,
-                    jitter = cfg_model["jitter"],
-                    only_nth_layer = cfg_model["augmented_layer"]
+                    jitter = cfg_model.get("jitter", 30),
+                    only_nth_layer = cfg_model.get("augmented_layer", 1)
                 )
             else:
                 rec_loss, rec_acc = model.evaluate(
@@ -151,7 +151,7 @@ def main(
     if model._best_loss != cur_loss:
         request_model_save(
             model = model,
-            identifier = f"{NOW}-ep{cfg_model["epochs"]}.pt"
+            identifier = f"{NOW}-ep{cfg_model.get("epochs", 100)}.pt"
         )
 
     tracker.plot(train = True)

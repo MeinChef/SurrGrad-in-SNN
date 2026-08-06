@@ -21,20 +21,24 @@ class SynthModel(torch.nn.Module):
         super().__init__()
 
         # resolve gradient
-        surrogate = resolve_gradient(config = config["surrogate"])
+        surrogate = resolve_gradient(config = config.get(
+            "surrogate",
+            {"type": "fast_sigmoid", "slope": 100}
+        ))
 
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
         self.layers = torch.nn.ModuleList()
         self.neurons = torch.nn.ModuleList()
+        neuron_list = config.get("neurons", [100,2])
         # create list of properties with tuple[in, out]
         self.neuron_prop = [
-            (config["features"]["val"], config["neurons"][0]),
+            (config.get("features", {"val": 10})["val"], neuron_list[0]),
             *[(
-                config["neurons"][i-1], 
-                config["neurons"][i]
-            ) for i in range(1, len(config["neurons"]))]
+                neuron_list[i-1],
+                neuron_list[i]
+            ) for i in range(1, len(neuron_list))]
         ]
 
         for i, n in enumerate(self.neuron_prop):
@@ -51,9 +55,9 @@ class SynthModel(torch.nn.Module):
             if n == self.neuron_prop[-1]:
                 reset = "none"
             else:
-                reset = config["neuron_reset"]
+                reset = config.get("neuron_reset", "substract")
             neuron = snn.Leaky(
-                beta = config["neuron_beta"],
+                beta = config.get("neuron_beta", 0.8),
                 spike_grad = surrogate,
                 init_hidden = False,
                 reset_mechanism = reset
@@ -64,30 +68,46 @@ class SynthModel(torch.nn.Module):
         assert len(self.layers) == len(self.neurons)
 
         # resolve additional bits
-        self.lossfn = resolve_loss(config = config["loss"])
-        self.acc    = resolve_acc(config = config["accuracy"])
+        self.lossfn = resolve_loss(config = config.get(
+            "loss", {
+                "type": "mean_ce",
+                "reduction": "mean",
+                "intermediate_reduction": "mean"
+            }
+        ))
+        self.acc    = resolve_acc(config = config.get(
+            "accuracy",
+            {"type": "rate"}
+        ))
         self.optim  = resolve_optim(
-            config  = config["optimiser"],
+            config  = config.get("optimiser", {
+                "type": "adam",
+                "lr": 0.002,
+                "betas": [0.9, 0.999],
+                "weight_decay": 0.0001
+            }),
             params  = self.parameters()
         )
 
         # save config to class
-        self._time_steps = config["time_steps"]["val"]
-        self._epochs = config["epochs"]
-        self._partial_train = config["partial_training"]
-        self._partial_test  = config["partial_testing"]
-        self._move_fraction = config["move_fraction"]
-        self._population = config["accuracy"]["population"]["is_pop"]
-        self._num_classes = config["accuracy"]["population"]["num_classes"]
-        self._best_loss = torch.inf
-
-        # neuron features
-        self._return_spk = config["return_spk"]
-
-        # predefine output tensor for forward
+        self._epochs        = config.get("epochs", 100)
+        self._partial_train = config.get("partial_training", -1)
+        self._partial_test  = config.get("partial_testing", -1)
+        self._move_fraction = config.get("move_fraction", 0.0)
+        self._return_spk    = config.get("return_spk", False)
+        self._samples       = config.get("samples", 20)
+        self._time_steps    = config.get("time_steps", {"val": 1000})["val"]
         self._forward_output_buffer = None
-        self._samples = config["samples"]
-        self._build = False
+
+
+        # accuracy/loss stuff
+        acc_default_dict = {"population": {
+            "is_pop": False,
+            "num_classes": 2
+        }}
+        self._population    = config.get("accuracy", acc_default_dict)["population"]["is_pop"]
+        self._num_classes   = config.get("accuracy", acc_default_dict)["population"]["num_classes"]
+        self._best_loss = torch.inf
 
         # send to gpu
         self.to(device = DEVICE)
