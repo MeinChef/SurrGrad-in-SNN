@@ -22,6 +22,7 @@ model:
   neuron_beta: 0.8
   neuron_reset: "zero" # "subtract", "zero", or "none"
   time_steps: *time_steps
+  learn_tau: False
   return_spk: False
 
   # hyperparameters
@@ -62,7 +63,7 @@ model:
     # available optimisers: adam
     type: "adam"
     learning_rate: 0.002
-    betas: [0.9, 0.99]
+    betas: [0.9, 0.999]
     weight_decay: 0.0001
 
   surrogate:
@@ -85,11 +86,12 @@ model:
   # partial training/testing in minibatches
   partial_training: -1
   partial_testing: -1
+  patience: 5
 
   # record hidden layers?
   samples: 20
 
   # fancy stuff (augmenting the forward pass within the model)
   move_fraction: 0.0
-  jitter: 30
-  augmented_layer: 1
+  jitter: 0
+  augmented_layer: 0
