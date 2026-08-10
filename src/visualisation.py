@@ -1,13 +1,8 @@
+from imports import NOW, Figure, MaxNLocator, Path, os, plt, torch
 from imports import numpy as np
-from imports import plt
-from imports import Path
-from imports import os
-from imports import torch
 from imports import snntorch as snn
 from imports import spikeplot as splt
-from imports import Figure
-from imports import NOW, MaxNLocator
-from misc import make_path# , load_spk_rec
+from misc import make_path
 
 
 def plot_loss_acc(config:dict) -> Figure:
@@ -21,7 +16,7 @@ def plot_loss_acc(config:dict) -> Figure:
     )
 
     assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
-    
+
     epochs = np.arange(1, len(loss) + 1)
 
     fig, ax1 = plt.subplots()
@@ -44,66 +39,76 @@ def plot_loss_acc(config:dict) -> Figure:
 
     return fig
 
-def plot_epoch_losses(
-    epoch_losses,
+def plot(
+    losses,
+    accuracies,
     train: bool = False,
     save: bool = True,
-    steps_per_epoch = None,
-    smooth = False,
-    window = 5,
-    figsize = (10, 5),
+    figsize: tuple[float, float] = (10, 5),
 ):
     """
     Plot training loss over steps for multiple epochs.
 
-    Parameters
-    ----------
-    epoch_losses : list[list[float]]
-        A list where each sublist contains loss values for one epoch.
-    steps_per_epoch : int | None
-        Optional fixed number of steps per epoch. If None, inferred from sublist lengths.
-    smooth : bool
-        Whether to apply moving average smoothing.
-    window : int
-        Moving average window size if smooth=True.
-    figsize : tuple
-        Figure size for matplotlib.
+
+    :param epoch_losses: A list where each sublist contains loss values for one epoch.
+    :type epoch_losses: list[list[float]]
+    :param epoch_acc: A list where each sublist contains accuracy values for one epoch.
+    :type epoch_acc: list[list[float]]
+    :param figsize: Figure size for matplotlib.
+    :type figsize: tuple[float, float]
     """
 
+    # make stuff more accessible
     label = "train" if train else "test"
-    global_step = 0
+    epochs = len(losses)
+    steps_per_epoch = len(losses[0])
 
+
+    # create figure
     fig = plt.figure(
         num = "losses",
         figsize = figsize,
-        dpi = 300
+        dpi = 300,
+        clear = True
     )
     axes = fig.subplots(1,1)
 
-    for epoch_idx, losses in enumerate(epoch_losses):
-        losses = np.array(losses)
+    # convert lists to numpy arrays
+    losses = np.concatenate(
+        [np.asarray(epoch) for epoch in losses] # type: ignore
+    )
+    accuracies = np.concatenate(
+        [np.asarray(epoch) for epoch in accuracies] # type: ignore
+    )
 
-        # optional smoothing
-        if smooth and len(losses) >= window:
-            kernel = np.ones(window) / window
-            losses = np.convolve(losses, kernel, mode="valid")
+    # and make the xaxis
+    steps = np.arange(losses.size) / steps_per_epoch
 
-        # X-axis steps
-        if steps_per_epoch is None:
-            steps = np.arange(global_step, global_step + len(losses))
-            global_step += len(losses)
-        else:
-            steps = np.arange(
-                epoch_idx * steps_per_epoch,
-                epoch_idx * steps_per_epoch + len(losses),
-            )
+    # and plot
+    axes.plot(
+        steps,
+        losses,
+        label = "Losses",
+        color = "blue"
+    )
+    secax = axes.twinx()
+    secax.plot(
+        steps,
+        accuracies,
+        label = "Accuracies",
+        color = "orange"
+    )
 
-        axes.plot(steps, losses, label=f"Epoch {epoch_idx + 1}")
-
-    axes.set_xlabel(f"{label.title()}ing Step")
+    axes.set_xlabel(f"{label.title()}ing Epoch")
     axes.set_ylabel("Loss")
-    axes.set_title(f"{label.title()}ing Loss per Epoch")
-    axes.legend()
+    secax.set_ylabel("Accuracies")
+    axes.set_title(f"{label.title()}ing Loss over Epochs")
+
+    # legend
+    lines1, labels1 = axes.get_legend_handles_labels()
+    lines2, labels2 = secax.get_legend_handles_labels()
+    axes.legend(lines1 + lines2, labels1 + labels2)
+
     axes.grid(True)
     fig.tight_layout()
 
@@ -127,6 +132,7 @@ def plot_epoch_losses(
             ),
             format = "pdf"
         )
+        fig.clear()
 
 
 def plot_lif_voltage() -> None:
@@ -225,12 +231,14 @@ def plot_lif_voltage() -> None:
             t,
             -0.35,
             str(val),
-            ha="center",
-            va="center",
-            fontsize=11,
-            family="monospace",
+            ha = "center",
+            va = "center",
+            fontsize = 11,
+            family = "monospace",
         )
-    ax[3].xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax[3].xaxis.set_major_locator(
+        MaxNLocator(integer = True)
+    )
 
     fig.tight_layout()
     plt.savefig("./img/lif-neuron.png")
