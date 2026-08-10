@@ -1,5 +1,5 @@
-import torch
-from typing import Literal
+from imports import Literal, torch
+
 
 class FirstSpikeLoss(torch.nn.Module):
     def __init__(
@@ -86,17 +86,17 @@ class MeanCELoss(torch.nn.Module):
 
 class SpikemaxLoss(torch.nn.Module):
     def __init__(self, window_size=30, tau_s=1.0, tau_r=1.0):
-        super(SpikemaxLoss, self).__init__()
+        super().__init__()
         self.window_size = window_size
         self.tau_s = tau_s
         self.tau_r = tau_r
 
     def forward(self, outputs, targets):
-        sequence_length, batch_size, num_classes = outputs.size()
+        T, B, N = outputs.size()    # noqa: RUF059
 
         # Calculate spike count for each neuron in the sliding window
         spike_counts = []
-        for t in range(sequence_length):
+        for t in range(T):
             if t < self.window_size:
                 spike_count = torch.sum(outputs[:, :t+1], dim=1)
             else:

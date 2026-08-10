@@ -4,6 +4,7 @@ from pathlib import Path
 import warnings
 import time
 import datetime
+from zoneinfo import ZoneInfo
 import tqdm
 import re
 import shutil
@@ -13,7 +14,7 @@ from itertools import product
 from concurrent.futures import ProcessPoolExecutor
 
 # type annotation
-from typing import Literal
+from typing import Literal, Any
 from collections.abc import Callable, Sequence
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
@@ -45,7 +46,7 @@ import seaborn
 from snntorch import spikeplot
 
 # some very global constants
-NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+NOW = datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y%m%d-%H%M%S")
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 elif torch.backends.mps.is_available():
