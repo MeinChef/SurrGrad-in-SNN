@@ -48,6 +48,7 @@ class SynthModel(torch.nn.Module):
                 out_features = n[1],
                 device = DEVICE
             )
+            layer = torch.nn.utils.parametrizations.weight_norm(layer, name = "weight")
             # torch.nn.init.xavier_uniform_(layer.weight)
             self.layers.append(layer)
 
@@ -58,6 +59,7 @@ class SynthModel(torch.nn.Module):
                 reset = config.get("neuron_reset", "substract")
             neuron = snn.Leaky(
                 beta = config.get("neuron_beta", 0.8),
+                learn_beta = config.get("neuron_learn_beta", True),
                 spike_grad = surrogate,
                 init_hidden = False,
                 reset_mechanism = reset
