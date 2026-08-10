@@ -1,3 +1,4 @@
+from alphafilter import RecurrentAlphaFilter
 from imports import DEVICE, TORCH_RNG, Callable, Literal, math, torch, tqdm, warnings
 from imports import snntorch as snn
 from misc import resolve_acc, resolve_gradient, resolve_loss, resolve_optim
@@ -31,6 +32,8 @@ class SynthModel(torch.nn.Module):
         ###########################
         self.layers = torch.nn.ModuleList()
         self.neurons = torch.nn.ModuleList()
+        self.filters = torch.nn.ModuleList()
+
         neuron_list = config.get("neurons", [100,2])
         # create list of properties with tuple[in, out]
         self.neuron_prop = [
@@ -40,6 +43,13 @@ class SynthModel(torch.nn.Module):
                 neuron_list[i]
             ) for i in range(1, len(neuron_list))]
         ]
+        # and calculate the neuron beta from the tau and ts
+        neuron_beta = torch.exp(
+            torch.tensor(
+                - config.get("ts", 1) /
+                  config.get("neuron_tau", 5)
+            )
+        )
 
         for i, n in enumerate(self.neuron_prop):
             # Linear connection layer
@@ -58,7 +68,7 @@ class SynthModel(torch.nn.Module):
             else:
                 reset = config.get("neuron_reset", "substract")
             neuron = snn.Leaky(
-                beta = config.get("neuron_beta", 0.8),
+                beta = neuron_beta,
                 learn_beta = config.get("neuron_learn_beta", True),
                 spike_grad = surrogate,
                 init_hidden = False,
@@ -66,8 +76,18 @@ class SynthModel(torch.nn.Module):
             )
             self.neurons.append(neuron)
 
+            # add alpha filters to the output of the spiking layer
+            afilter = RecurrentAlphaFilter(
+                neurons = n[1],
+                tau = config.get("filter_tau", 10),
+                ts = config.get("ts", 1),
+                learn_tau = config.get("filter_learn_tau", True)
+            )
+            self.filters.append(afilter)
+
         assert len(self.neuron_prop) == len(self.neurons)
-        assert len(self.layers) == len(self.neurons)
+        assert len(self.layers)      == len(self.neurons)
+        assert len(self.filters)     == len(self.neurons)
 
         # resolve additional bits
         self.lossfn = resolve_loss(config = config.get(
@@ -140,14 +160,14 @@ class SynthModel(torch.nn.Module):
         :return: Output of the last layer
         :rtype: Tensor
         """
-
-        # setup
-        mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
-
         if batch_first:
             # reshape to actually have the time_steps first again
             # that makes the for loop later cleaner
             x = x.permute(1, 0, -1).contiguous()
+
+        # setup
+        mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
+        [fil.reset_states(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
 
         # pre-allocate the output-tensor
         out = torch.empty(
@@ -165,11 +185,13 @@ class SynthModel(torch.nn.Module):
             # first layer
             cur = self.layers[0](x[step])
             spk, mems[0] = self.neurons[0](cur, mems[0])
+            spk = self.filters[0](spk)
 
             # hidden layers
             for i in range(1, len(self.layers)):
                 cur = self.layers[i](spk)
                 spk, mems[i] = self.neurons[i](cur, mems[i])
+                spk = self.filters[i](spk)
 
             # store output
             if self._return_spk:
