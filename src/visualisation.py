@@ -1,138 +1,7 @@
-from imports import NOW, Figure, MaxNLocator, Path, os, plt, torch
+from imports import MaxNLocator, plt, torch
 from imports import numpy as np
 from imports import snntorch as snn
 from imports import spikeplot as splt
-from misc import make_path
-
-
-def plot_loss_acc(config:dict) -> Figure:
-    # load values from files
-    loss = np.loadtxt(
-        make_path(config["data_path"] + "/loss.txt"),
-    )
-
-    acc = np.loadtxt(
-        make_path(config["data_path"] + "/acc.txt"),
-    )
-
-    assert len(loss) == len(acc), print(f"Loss ain't acc, off by {len(loss)-len(acc)}")
-
-    epochs = np.arange(1, len(loss) + 1)
-
-    fig, ax1 = plt.subplots()
-
-    # Plot loss on the left y-axis
-    ax1.set_xlabel('Batches')
-    ax1.set_ylabel('Loss', color='orange')
-    ax1.plot(epochs, loss, color='orange', label='Loss')
-    ax1.tick_params(axis='y', labelcolor='orange')
-
-    # Create a second y-axis for accuracy
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Accuracy', color='blue')
-    ax2.plot(epochs, acc, color='blue', label='Accuracy')
-    ax2.tick_params(axis='y', labelcolor='blue')
-
-    fig.suptitle('Loss and Accuracy during Training')
-    fig.tight_layout()
-    plt.show()
-
-    return fig
-
-def plot(
-    losses,
-    accuracies,
-    train: bool = False,
-    save: bool = True,
-    figsize: tuple[float, float] = (10, 5),
-):
-    """
-    Plot training loss over steps for multiple epochs.
-
-
-    :param epoch_losses: A list where each sublist contains loss values for one epoch.
-    :type epoch_losses: list[list[float]]
-    :param epoch_acc: A list where each sublist contains accuracy values for one epoch.
-    :type epoch_acc: list[list[float]]
-    :param figsize: Figure size for matplotlib.
-    :type figsize: tuple[float, float]
-    """
-
-    # make stuff more accessible
-    label = "train" if train else "test"
-    epochs = len(losses)
-    steps_per_epoch = len(losses[0])
-
-
-    # create figure
-    fig = plt.figure(
-        num = "losses",
-        figsize = figsize,
-        dpi = 300,
-        clear = True
-    )
-    axes = fig.subplots(1,1)
-
-    # convert lists to numpy arrays
-    losses = np.concatenate(
-        [np.asarray(epoch) for epoch in losses] # type: ignore
-    )
-    accuracies = np.concatenate(
-        [np.asarray(epoch) for epoch in accuracies] # type: ignore
-    )
-
-    # and make the xaxis
-    steps = np.arange(losses.size) / steps_per_epoch
-
-    # and plot
-    axes.plot(
-        steps,
-        losses,
-        label = "Losses",
-        color = "blue"
-    )
-    secax = axes.twinx()
-    secax.plot(
-        steps,
-        accuracies,
-        label = "Accuracies",
-        color = "orange"
-    )
-
-    axes.set_xlabel(f"{label.title()}ing Epoch")
-    axes.set_ylabel("Loss")
-    secax.set_ylabel("Accuracies")
-    axes.set_title(f"{label.title()}ing Loss over Epochs")
-
-    # legend
-    lines1, labels1 = axes.get_legend_handles_labels()
-    lines2, labels2 = secax.get_legend_handles_labels()
-    axes.legend(lines1 + lines2, labels1 + labels2)
-
-    axes.grid(True)
-    fig.tight_layout()
-
-    # save figure
-    if save:
-        # create folder if it didn't exist
-        folderpth = os.path.join(
-            Path(__file__).parent.parent,
-            "img",
-            NOW,
-        )
-        os.makedirs(
-            folderpth,
-            exist_ok = True
-        )
-
-        fig.savefig(
-            os.path.join(
-                folderpth,
-                f"{label}-loss.pdf"
-            ),
-            format = "pdf"
-        )
-        fig.clear()
 
 
 def plot_lif_voltage() -> None:
@@ -241,7 +110,7 @@ def plot_lif_voltage() -> None:
     )
 
     fig.tight_layout()
-    plt.savefig("./img/lif-neuron.png")
+    plt.savefig("./img/lif-neuron.pdf", format = "pdf")
     plt.show()
 
 if __name__ == "__main__":
