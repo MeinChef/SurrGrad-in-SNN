@@ -11,18 +11,24 @@ data:
   max_rate: 10
   only_even: True
 
-  batch_size: 128
+  batch_size: 512
   shuffle: True
   train_split: 0.7
   prefetch: 16
 
 model:
   features: *neurons
-  neurons: [100, 2]
-  neuron_beta: 0.8
-  neuron_reset: "zero" # "subtract", "zero", or "none"
   time_steps: *time_steps
-  learn_tau: False
+  ts: 1
+
+  neurons: [100, 2]
+  neuron_reset: "zero" # "subtract", "zero", or "none"
+  neuron_tau: 5
+  neuron_learn_beta: True
+
+  filter_tau: 10
+  filter_learn_tau: True
+
   return_spk: False
 
   # hyperparameters
