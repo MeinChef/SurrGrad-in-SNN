@@ -93,10 +93,9 @@ class CausalConvAlphaFilter(torch.nn.Module):
         # Reshape to (B, N, 1) for Conv1d
         x = x.unsqueeze(-1)  # (B, N, 1)
 
-        # Expand kernel to apply to all neurons
-        # We want to apply the same filter to each neuron independently
-        # Use groups=N to treat each neuron as a separate channel
-        kernel_expanded = self.kernel.expand(1, self.neurons, self.kernel_length)
+        # Now, we want weight to be: (N, 1, K) → one filter per neuron
+        # So expand kernel from (1, 1, K) to (N, 1, K)
+        kernel_expanded = self.kernel.expand(self.neurons, 1, -1)  # (N, 1, K)
 
         # Apply causal convolution
         # Pad on the left to keep output size = input size
