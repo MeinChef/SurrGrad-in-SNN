@@ -86,7 +86,7 @@ class MetricsTracker:
     ) -> None:
 
         trainfile = os.path.join(self.path, "train-metrics.pkl")
-        if  os.path.exists(trainfile):
+        if os.path.exists(trainfile):
             with open(trainfile, "rb") as file:
                 self.train_loss, self.train_acc = pickle.load(
                     file
@@ -95,7 +95,7 @@ class MetricsTracker:
             warnings.warn(f"Train metrics file {trainfile} not found.")
 
         testfile = os.path.join(self.path, "test-metrics.pkl")
-        if not os.path.exists(testfile):
+        if os.path.exists(testfile):
             with open(testfile, "rb") as file:
                 self.val_loss, self.val_acc = pickle.load(
                     file
@@ -205,19 +205,14 @@ class MetricsTracker:
         # save figure
         if save:
             # create folder if it didn't exist
-            folderpth = os.path.join(
-                Path(__file__).parent.parent,
-                "img",
-                NOW,
-            )
             os.makedirs(
-                folderpth,
+                self.path,
                 exist_ok = True
             )
 
             fig.savefig(
                 os.path.join(
-                    folderpth,
+                    self.path,
                     f"{label}-metrics.pdf"
                 ),
                 format = "pdf"
