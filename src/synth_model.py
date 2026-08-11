@@ -1,4 +1,4 @@
-from alphafilter import RecurrentAlphaFilter
+from causal_alphafilter import CausalConvAlphaFilter
 from imports import DEVICE, TORCH_RNG, Callable, Literal, math, torch, tqdm, warnings
 from imports import snntorch as snn
 from misc import resolve_acc, resolve_gradient, resolve_loss, resolve_optim
@@ -77,7 +77,7 @@ class SynthModel(torch.nn.Module):
             self.neurons.append(neuron)
 
             # add alpha filters to the output of the spiking layer
-            afilter = RecurrentAlphaFilter(
+            afilter = CausalConvAlphaFilter(
                 neurons = n[1],
                 tau = config.get("filter_tau", 10),
                 ts = config.get("ts", 1),
@@ -108,7 +108,10 @@ class SynthModel(torch.nn.Module):
                 "betas": [0.9, 0.999],
                 "weight_decay": 0.0001
             }),
-            params  = self.parameters()
+            params  = [
+                {"params": [p for p in self.parameters() if not hasattr(p, 'tau_param')]},
+                {"params": [p for p in self.parameters() if hasattr(p, 'tau_param')], "lr": 0.02}
+            ]
         )
 
         # save config to class
