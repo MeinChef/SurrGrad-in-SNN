@@ -170,7 +170,7 @@ class SynthModel(torch.nn.Module):
 
         # setup
         mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
-        [fil.reset_states(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
+        # [fil.reset_states(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
 
         # pre-allocate the output-tensor
         out = torch.empty(
@@ -185,13 +185,10 @@ class SynthModel(torch.nn.Module):
 
 
         for step in range(self._time_steps):
-            # first layer
-            cur = self.layers[0](x[step])
-            spk, mems[0] = self.neurons[0](cur, mems[0])
-            spk = self.filters[0](spk)
+            spk = x[step]
 
             # hidden layers
-            for i in range(1, len(self.layers)):
+            for i in range(len(self.layers)):
                 cur = self.layers[i](spk)
                 spk, mems[i] = self.neurons[i](cur, mems[i])
                 spk = self.filters[i](spk)
