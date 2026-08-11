@@ -46,7 +46,10 @@ import seaborn
 from snntorch import spikeplot
 
 # some very global constants
-NOW = datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y%m%d-%H%M%S")
+NOW = os.getenv(
+    "NOW",
+    datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y%m%d-%H%M%S")
+)
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 elif torch.backends.mps.is_available():

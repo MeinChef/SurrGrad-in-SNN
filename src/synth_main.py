@@ -92,8 +92,9 @@ def main(
         tracker.update_val(loss, acc)
         tracker.announce()
 
+        cur_loss = torch.tensor(loss).mean()
         # save model if it got better
-        if model._best_loss < best_loss:
+        if cur_loss < best_loss:
             # update saved model
             print("Model performance improved!")
 
@@ -102,17 +103,11 @@ def main(
                     model,
                     f"{NOW}.pt"
                 )
-            best_loss = model._best_loss
-
-        # or increase patience value if it didn't
-        eps = 1e-5
-        if best_loss <= cur_loss + eps and best_loss >= cur_loss - eps:
+            best_loss = cur_loss
+        else:
             cur_patience += 1
-        if cur_patience >= cfg_model.get("patience", 5):
-            break
 
         # and update the current loss
-        cur_loss = torch.tensor(loss).mean()
 
         if args.record_hidden:
             # record data
@@ -147,6 +142,9 @@ def main(
 
         if args.save_model:
             tracker.save(force = True)
+
+        if cur_patience >= cfg_model.get("patience", 5):
+            break
 
     if model._best_loss != cur_loss:
         request_model_save(

@@ -700,18 +700,43 @@ class DataHandler:
         """
 
         mem = data["membrane"].cpu().numpy()
-        # offset each membrane potential to display them above each other
-        for neuron in range(mem.shape[0]):
-            mem[neuron] += neuron * 2
+        # Ensure mem is float32/float64 and not clipped
+        mem = mem.astype(float)
 
+        # Define offset: one unit apart (e.g., 1.0) for clarity
+        offset = 1.0
+        num_neurons = mem.shape[0]
+
+        # Create offset membrane potentials
+        # We'll add an offset per neuron: neuron * offset
+        # But we'll keep the original voltage values intact
+        offset_mem = mem + np.arange(num_neurons)[:, np.newaxis] * offset
+
+        # Create a secondary y-axis
         secax = axes.twinx()
+
+        # Plot the offset membrane potentials
         secax.plot(
-            mem.T,
-            c = "orange",
-            alpha = 0.5
+            offset_mem.T,
+            c="orange",
+            alpha=0.7,
+            linewidth=1.0
         )
-        secax.set_ylim(-1, mem.shape[0] * 2 - 1)
-        secax.set_ylabel("Membrane Voltage")
+
+        # Set y-limits based on the actual offset range
+        buffer = 0.5
+        y_min = offset_mem.min() - buffer  # Slight buffer below first neuron
+        y_max = offset_mem.max() + buffer  # Slight buffer above last neuron
+        secax.set_ylim(y_min, y_max)
+
+        # Label the y-axis with neuron indices (optional)
+        secax.set_ylabel("Neuron Membrane Potential (offset)")
+        secax.set_yticks(np.arange(num_neurons) * offset + offset / 2)
+        secax.set_yticklabels([f"Neuron {i}" for i in range(num_neurons)])
+
+        # Optional: add horizontal lines for threshold/reset if needed
+        # e.g., secax.axhline(y=0.5, color='r', linestyle='--', alpha=0.5)
+
         return secax
 
 

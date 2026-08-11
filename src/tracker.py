@@ -92,7 +92,7 @@ class MetricsTracker:
                     file
                 )
         else:
-            warnings.warn(f"File {trainfile} already exists, not saving metrics again.")
+            warnings.warn(f"Train metrics file {trainfile} not found.")
 
         testfile = os.path.join(self.path, "test-metrics.pkl")
         if not os.path.exists(testfile):
@@ -101,7 +101,7 @@ class MetricsTracker:
                     file
                 )
         else:
-            warnings.warn(f"File {testfile} already exists, not saving metrics again.")
+            warnings.warn(f"Train metrics file {trainfile} not found.")
 
     def announce(
         self,
