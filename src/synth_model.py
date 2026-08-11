@@ -1,7 +1,7 @@
-from causal_alphafilter import CausalConvAlphaFilter
 from imports import DEVICE, TORCH_RNG, Callable, Literal, math, torch, tqdm, warnings
 from imports import snntorch as snn
 from misc import resolve_acc, resolve_gradient, resolve_loss, resolve_optim
+from pspfilter import PSPFilter
 
 DEBUG = False
 
@@ -77,11 +77,11 @@ class SynthModel(torch.nn.Module):
             self.neurons.append(neuron)
 
             # add alpha filters to the output of the spiking layer
-            afilter = CausalConvAlphaFilter(
+            afilter = PSPFilter(
                 neurons = n[1],
-                tau = config.get("filter_tau", 10),
+                tau_init = config.get("filter_tau", 10),
                 ts = config.get("ts", 1),
-                learn_tau = config.get("filter_learn_tau", True)
+                # learn_tau = config.get("filter_learn_tau", True)
             )
             self.filters.append(afilter)
 
@@ -170,7 +170,7 @@ class SynthModel(torch.nn.Module):
 
         # setup
         mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
-        # [fil.reset_states(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
+        [fil.reset(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
 
         # pre-allocate the output-tensor
         out = torch.empty(
