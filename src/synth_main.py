@@ -146,11 +146,11 @@ def main(
         if cur_patience >= cfg_model.get("patience", 5):
             break
 
-    if model._best_loss != cur_loss:
-        request_model_save(
-            model = model,
-            identifier = f"{NOW}-ep{cfg_model.get("epochs", 100)}.pt"
-        )
+    # if model._best_loss != cur_loss:
+    #     request_model_save(
+    #         model = model,
+    #         identifier = f"{NOW}-ep{cfg_model.get("epochs", 100)}.pt"
+    #     )
 
     tracker.plot(train = True)
     tracker.plot(train = False)

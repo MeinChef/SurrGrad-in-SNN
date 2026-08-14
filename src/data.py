@@ -4,8 +4,8 @@ from imports import (
     Axes,
     Figure,
     Path,
-    matplotlib,
     functional,
+    matplotlib,
     os,
     pickle,
     plt,
@@ -468,8 +468,8 @@ class DataHandler:
 
         # convolve each neuron independently
         spike_train = torch.nn.functional.conv1d(
-            x, 
-            kernel, 
+            x,
+            kernel,
             padding = padding
         ).squeeze(1)
 
@@ -929,7 +929,7 @@ class DataHandler:
 
         fig = plt.figure(
             num = "rsync",
-            figsize = (5 * unique_classes.size, 10),
+            figsize = (2.5 * unique_classes.size, 5),
             dpi = 300,
             clear = True
         )

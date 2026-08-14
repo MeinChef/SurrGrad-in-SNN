@@ -61,8 +61,8 @@ class FirstSpikeLoss(torch.nn.Module):
 class MeanCELoss(torch.nn.Module):
     def __init__(
         self,
-        intermediate_reduction: Literal["mean", "sum"] = "mean",
-        reduction: Literal["mean", "sum", "none"] = "mean"
+        intermediate_reduction: Literal["mean", "sum"] = "mean",    # noqa: F821 (Undefined Literal)
+        reduction: Literal["mean", "sum", "none"] = "mean"          # noqa: F821 (Undefined Literal)
     ):
         super().__init__()
         if intermediate_reduction == "sum":
