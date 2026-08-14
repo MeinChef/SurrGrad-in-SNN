@@ -2,81 +2,131 @@ from imports import torch
 
 
 class PSPFilter(torch.nn.Module):
+    """
+    Stateful recursive realization of the SLAYER alpha PSP kernel.
+
+    SLAYER kernel:
+
+        k(t) = (t / tau) * exp(1 - t / tau)
+
+    sampled at:
+
+        t = n * Ts
+
+    so:
+
+        k[n] = (n * Ts / tau) * exp(1 - n * Ts / tau)
+
+    The recurrent realization is:
+
+        a[n] = exp(-Ts / tau)
+
+        q[n] = x[n] + a[n] * q[n-1]
+
+        r[n] = a[n] * (r[n-1] + q[n-1])
+
+        psp[n] = exp(1) * (Ts / tau) * r[n]
+
+    IMPORTANT:
+        States are NOT detached inside forward().
+        This allows gradients to propagate through time.
+
+    Detach the states explicitly at BPTT boundaries if truncated
+    BPTT is desired.
+    """
+
     def __init__(
         self,
-        neurons,
-        tau_init=10.0,
-        ts=1.0,
-        max_tau=100.0,
+        neurons: int,
+        tau_init: float = 10.0,
+        ts: float = 1.0,
+        max_tau: float = 100.0,
     ):
         super().__init__()
 
         self.neurons = neurons
         self.ts = ts
-
-        self.log_tau = torch.nn.Parameter(
-            torch.full((neurons,), tau_init).log()
-        )
-
         self.max_tau = max_tau
-        self.K = int(torch.ceil(
-            torch.tensor(5 * max_tau / ts)
-        ).item())
+
+        self.raw_tau = torch.nn.Parameter(
+            torch.full((neurons,), float(tau_init))
+        )
 
         self.register_buffer(
-            "history",
-            torch.zeros(1, neurons, self.K)
+            "q",
+            torch.zeros(1, neurons)
         )
 
-    @property
-    def tau(self):
-        return self.log_tau.exp()
+        self.register_buffer(
+            "r",
+            torch.zeros(1, neurons)
+        )
 
-    def reset(self, batch_size=None):
+    def reset(self, batch_size = None):
+        """
+        Resets the hidden states.
+        If batch_size is not given, will infer it from the last shape it got.
+        """
         if batch_size is None:
-            batch_size = self.history.shape[0]
+            batch_size = self.q.shape[0]
 
-        self.history = torch.zeros(
+
+        self.q = self.q.new_zeros(
             batch_size,
             self.neurons,
-            self.K,
-            device=self.history.device,
-            dtype=self.history.dtype,
         )
+
+        self.r = self.r.new_zeros(
+            batch_size,
+            self.neurons,
+        )
+
+    def detach_state(self):
+        """
+        Detaches the hidden states from the autograd graph. Call when desired.
+        """
+        self.q = self.q.detach()
+        self.r = self.r.detach()
 
     def forward(self, spikes):
         # spikes: [batch, neurons]
 
         B, N = spikes.shape
 
-        if self.history.shape[0] != B:
+        if N != self.neurons:
+            raise ValueError(
+                f"Expected {self.neurons} neurons, got {N}"
+            )
+
+        if self.q.shape[0] != B:
             self.reset(B)
 
-        # Shift history into the past.
-        self.history = torch.roll(
-            self.history, shifts=1, dims=-1
-        )
-        self.history[..., 0] = spikes
+        # to keep tau in the range [ts, tau_max]
+        tau = self.ts + (
+            self.max_tau - self.ts
+        ) * torch.sigmoid(self.raw_tau)
 
-        # Build one alpha PSP kernel per neuron.
-        t = torch.arange(
-            self.K,
-            device=spikes.device,
-            dtype=spikes.dtype,
-        ) * self.ts
+        # Exact exponential decay over one timestep.
+        a = torch.exp(-self.ts / tau)
 
-        tau = self.tau.to(spikes.dtype).clamp(
-            min=self.ts
-        )
+        q_prev = self.q
+        r_prev = self.r
 
-        kernel = (
-            (t[None, :] / tau[:, None])
-            * torch.exp(
-                1.0 - t[None, :] / tau[:, None]
-            )
+        # Update q
+        q = spikes + a[None, :] * q_prev
+
+        r = a[None, :] * (
+            r_prev + q_prev
         )
 
-        # [B, N, K] * [N, K] -> [B, N]
-        psp = (self.history * kernel[None, :, :]).sum(dim=-1)
+        psp = (
+            torch.e
+            * (self.ts / tau)[None, :]
+            * r
+        )
 
-        return psp * self.ts
+        # Store state for the next timestep.
+        self.q = q
+        self.r = r
+
+        return psp

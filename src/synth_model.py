@@ -30,11 +30,11 @@ class SynthModel(torch.nn.Module):
         ###########################
         ### DEFINITION OF MODEL ###
         ###########################
-        self.layers = torch.nn.ModuleList()
-        self.neurons = torch.nn.ModuleList()
-        self.filters = torch.nn.ModuleList()
-
+        self.layers:  torch.nn.ModuleList = torch.nn.ModuleList()
+        self.neurons: torch.nn.ModuleList = torch.nn.ModuleList()
+        self.filters: torch.nn.ModuleList = torch.nn.ModuleList()
         neuron_list = config.get("neurons", [100,2])
+
         # create list of properties with tuple[in, out]
         self.neuron_prop = [
             (config.get("features", {"val": 10})["val"], neuron_list[0]),
@@ -43,6 +43,7 @@ class SynthModel(torch.nn.Module):
                 neuron_list[i]
             ) for i in range(1, len(neuron_list))]
         ]
+
         # and calculate the neuron beta from the tau and ts
         neuron_beta = torch.exp(
             torch.tensor(
@@ -51,6 +52,7 @@ class SynthModel(torch.nn.Module):
             )
         )
 
+        # Define model structure
         for i, n in enumerate(self.neuron_prop):
             # Linear connection layer
             layer = torch.nn.Linear(
@@ -59,7 +61,6 @@ class SynthModel(torch.nn.Module):
                 device = DEVICE
             )
             layer = torch.nn.utils.parametrizations.weight_norm(layer, name = "weight")
-            # torch.nn.init.xavier_uniform_(layer.weight)
             self.layers.append(layer)
 
             # leaky neurons
@@ -77,13 +78,12 @@ class SynthModel(torch.nn.Module):
             self.neurons.append(neuron)
 
             # add alpha filters to the output of the spiking layer
-            afilter = PSPFilter(
+            fil = PSPFilter(
                 neurons = n[1],
-                tau_init = config.get("filter_tau", 10),
-                ts = config.get("ts", 1),
-                # learn_tau = config.get("filter_learn_tau", True)
+                tau_init = config.get("filter_tau", 10.),
+                ts = config.get("ts", 1.),
             )
-            self.filters.append(afilter)
+            self.filters.append(fil)
 
         assert len(self.neuron_prop) == len(self.neurons)
         assert len(self.layers)      == len(self.neurons)
@@ -169,8 +169,13 @@ class SynthModel(torch.nn.Module):
             x = x.permute(1, 0, -1).contiguous()
 
         # setup
+        # the linter annotations are because it assumes reset_mem and other functions
+        # to be a tensor / Module instead of what they are.
         mems = [neuron.reset_mem() for neuron in self.neurons]      # pyright: ignore[reportCallIssue]
-        [fil.reset(x.shape[1]) for fil in self.filters]      # pyright: ignore[reportCallIssue]
+        for fil in self.filters:                                    # pyright: ignore[reportAssignmentType]
+            fil: PSPFilter
+            fil.reset(x.shape[1])
+
 
         # pre-allocate the output-tensor
         out = torch.empty(
@@ -217,10 +222,6 @@ class SynthModel(torch.nn.Module):
         :rtype: tuple[list, list]
         """
 
-        # # check if model has been build already
-        # if not self._build:
-        #     self.build_vaules(next(iter(data))[0])
-
         # pre-define variables
         loss_hist = []
         acc_hist  = []
@@ -252,7 +253,7 @@ class SynthModel(torch.nn.Module):
             if loss.isnan().any():
                 print("something's fishy")
             acc = self.acc(
-                pred, 
+                pred,
                 target,
                 population_code = self._population,
                 num_classes = self._num_classes
@@ -263,7 +264,7 @@ class SynthModel(torch.nn.Module):
             loss.backward()
             self.optim.step()
 
-            # TODO: dump list regularly to file
+            # store loss/acc values for neat little plotting
             loss_hist.append(loss.item())
             acc_hist.append(acc)
 
@@ -321,8 +322,7 @@ class SynthModel(torch.nn.Module):
                     num_classes = self._num_classes
                 )
 
-                # TODO: record loss/accuracy during training
-                # TODO: dump list regularly to file
+                # record loss/accuracy during training
                 loss_hist.append(loss.item())
                 acc_hist.append(acc)
 
@@ -352,6 +352,9 @@ class SynthModel(torch.nn.Module):
         neuron = self.neurons[layer]
         mem = neuron.reset_mem()                # pyright: ignore[reportCallIssue]
         con = self.layers[layer]
+        fil = self.filters[layer]               # pyright: ignore[reportAssignmentType]
+        fil: PSPFilter
+        fil.reset(x.shape[1])
 
 
         # pre-allocate the output-tensor
@@ -368,6 +371,7 @@ class SynthModel(torch.nn.Module):
         for step in range(self._time_steps):
             cur = con(x[step])
             spk, mem = neuron(cur, mem)
+            spk = fil(spk)
 
             if self._return_spk and layer == len(self.layers):
                 out[step] = mem
