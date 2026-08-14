@@ -104,8 +104,10 @@ def main(
                     f"{NOW}.pt"
                 )
             best_loss = cur_loss
+            cur_patience = 0
         else:
             cur_patience += 1
+            print(f"No improvement. Patience: {cur_patience}/{cfg_model.get("patience", 5)}")
 
         # and update the current loss
 
