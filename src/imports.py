@@ -56,7 +56,10 @@ else:
     DEVICE = torch.device("cpu")
 NUMPY_RNG = numpy.random.default_rng(42)
 TORCH_RNG = torch.manual_seed(42)
+
+# some paths
 DEFAULT_CONFIG_PATH = os.path.join(
     Path(__file__).parent.parent,
     "config.yml"
 )
+ROOT = Path(__file__).parent.parent

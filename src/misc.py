@@ -1,4 +1,4 @@
-from imports import NOW, Callable, Path, functional, os, re, surrogate, torch, warnings
+from imports import NOW, ROOT, Callable, Path, functional, os, surrogate, torch, warnings
 from loss import FirstSpikeLoss, MeanCELoss, SpikemaxLoss
 from surrogate import stable_sigmoid
 
@@ -170,12 +170,12 @@ def create_datapath(
 ) -> str:
     if data_path is None:
         path = os.path.join(
-            Path(__file__).parent.parent,
+            ROOT,
             "data"
         )
     elif not os.path.isabs(data_path):
         path = os.path.join(
-            Path(__file__).parent.parent,
+            ROOT,
             data_path
         )
     else:

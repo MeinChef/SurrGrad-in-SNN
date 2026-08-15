@@ -2,6 +2,7 @@ from imports import (
     DEFAULT_CONFIG_PATH,
     NOW,
     PCA,
+    ROOT,
     Axes,
     Figure,
     Path,
@@ -68,7 +69,7 @@ def save_model(
 
     if data_path is None:
         data_path = os.path.join(
-            Path(__file__).parent.parent,
+            ROOT,
             "data",
             identifier,
         )
@@ -100,7 +101,7 @@ def save_model(
         )
     )
 
-    print("Saved model to: " + model_path + identifier)
+    print("Saved model to: " + model_path)
 
 def request_model_save(
     model: SynthModel,
@@ -158,7 +159,7 @@ def load_model(
 
     if data_path is None:
         data_path = os.path.join(
-            Path(__file__).parent.parent,
+            ROOT,
             "data",
             identifier,
         )
@@ -173,6 +174,9 @@ def load_model(
         data_path,
         "synthmodel-" + identifier
     )
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+
     model = SynthModel(cfg)
     model.load_state_dict(
         torch.load(model_path)
@@ -216,7 +220,7 @@ class DataHandler:
         # path stuff
         if data_path is None:
             data_path = os.path.join(
-                Path(__file__).parent.parent,
+                ROOT,
                 "data",
                 identifier
             )
@@ -635,7 +639,7 @@ class DataHandler:
             # if not os.path.exists(config_path):
             #     shutil.copy(
             #         src = os.path.join(
-            #             Path(__file__).parent.parent,
+            #             ROOT,
             #             "config.yml"
             #         ),
             #         dst = config_path
@@ -1010,7 +1014,7 @@ class DataHandler:
 
         self.metrics = {}
         if loss:
-            self.metrics["loss"] = acc
+            self.metrics["loss"] = loss
         if acc:
             self.metrics["acc"] = acc
 
