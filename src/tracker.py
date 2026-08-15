@@ -1,24 +1,26 @@
-from imports import NOW, Figure, Path, os, pickle, plt, warnings
+from imports import Figure, os, pickle, plt, warnings
 from imports import numpy as np
 
 
 class MetricsTracker:
     def __init__(
         self,
-        path: str | None = None
+        data_path: str,
     ) -> None:
         """
         :param path: in which directory to save stuff
         :type path: str
         """
-        if path is None:
-            self.path = os.path.join(
-                Path(__file__).parent.parent,
-                "img",
-                NOW
-            )
-        else:
-            self.path = path
+
+        # path shenanigans
+        self.img_path = os.path.join(
+            data_path,
+            "img"
+        )
+        self.bin_path = os.path.join(
+            data_path,
+            "bin"
+        )
 
         self.train_loss = []
         self.train_acc = []
@@ -46,7 +48,7 @@ class MetricsTracker:
         force: bool = False
     ) -> None:
 
-        trainfile = os.path.join(self.path, "train-metrics.pkl")
+        trainfile = os.path.join(self.bin_path, "train-metrics.pkl")
         if not os.path.exists(trainfile):
             with open(trainfile, "wb+") as file:
                 pickle.dump(
@@ -64,7 +66,7 @@ class MetricsTracker:
             else:
                 warnings.warn(f"File {trainfile} already exists, not saving metrics again.")
 
-        testfile = os.path.join(self.path, "test-metrics.pkl")
+        testfile = os.path.join(self.bin_path, "test-metrics.pkl")
         if not os.path.exists(testfile):
             with open(testfile, "wb+") as file:
                 pickle.dump(
@@ -85,7 +87,7 @@ class MetricsTracker:
         self
     ) -> None:
 
-        trainfile = os.path.join(self.path, "train-metrics.pkl")
+        trainfile = os.path.join(self.bin_path, "train-metrics.pkl")
         if os.path.exists(trainfile):
             with open(trainfile, "rb") as file:
                 self.train_loss, self.train_acc = pickle.load(
@@ -94,7 +96,7 @@ class MetricsTracker:
         else:
             warnings.warn(f"Train metrics file {trainfile} not found.")
 
-        testfile = os.path.join(self.path, "test-metrics.pkl")
+        testfile = os.path.join(self.bin_path, "test-metrics.pkl")
         if os.path.exists(testfile):
             with open(testfile, "rb") as file:
                 self.val_loss, self.val_acc = pickle.load(
@@ -150,7 +152,7 @@ class MetricsTracker:
             losses = self.val_loss
             accuracies = self.val_acc
 
-        epochs = len(losses)
+        # epochs = len(losses)
         steps_per_epoch = len(losses[0])
 
 
@@ -206,13 +208,13 @@ class MetricsTracker:
         if save:
             # create folder if it didn't exist
             os.makedirs(
-                self.path,
+                self.img_path,
                 exist_ok = True
             )
 
             fig.savefig(
                 os.path.join(
-                    self.path,
+                    self.img_path,
                     f"{label}-metrics.pdf"
                 ),
                 format = "pdf"

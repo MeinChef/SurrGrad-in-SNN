@@ -1,5 +1,6 @@
 # useful built-in modules
 import os
+import sys
 from pathlib import Path
 import warnings
 import time
@@ -46,10 +47,7 @@ import seaborn
 from snntorch import spikeplot
 
 # some very global constants
-NOW = os.getenv(
-    "NOW",
-    datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y%m%d-%H%M%S")
-)
+NOW = datetime.datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y%m%d-%H%M%S")
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 elif torch.backends.mps.is_available():
@@ -58,3 +56,7 @@ else:
     DEVICE = torch.device("cpu")
 NUMPY_RNG = numpy.random.default_rng(42)
 TORCH_RNG = torch.manual_seed(42)
+DEFAULT_CONFIG_PATH = os.path.join(
+    Path(__file__).parent.parent,
+    "config.yml"
+)

@@ -1,4 +1,5 @@
 from imports import (
+    DEFAULT_CONFIG_PATH,
     NOW,
     PCA,
     Axes,
@@ -37,10 +38,7 @@ def load_config(
 
     # load default config located at ../config.yml
     if path is None:
-        path = os.path.join(
-            Path(__file__).parent.parent,
-            "config.yml"
-        )
+        path = DEFAULT_CONFIG_PATH
 
     with open(path, "r") as file:
         configs = yaml.safe_load(file)
@@ -49,7 +47,9 @@ def load_config(
 
 def save_model(
     model: SynthModel,
-    identifier: str | None = None,
+    data_path: str | None = None,
+    config_path: str | None = None,
+    identifier: str = NOW,
 ) -> None:
     """
     Helper function to save the model.
@@ -60,77 +60,85 @@ def save_model(
                     If not provided, a timestamp is being used.
     :type identifier: str or None, optional (Default: None)
     """
-    if identifier is None:
-        identifier = NOW + ".pt"
 
-    if "." not in identifier:
-        raise ValueError(
-            "Expected file extension. Try again with a '.fileextension'."
-        )
+    # check if all the parameters are set, and set them if not
 
-    os.makedirs(
-        os.path.join(
+    if Path(identifier).suffix == '':
+        identifier = identifier + ".pt"
+
+    if data_path is None:
+        data_path = os.path.join(
             Path(__file__).parent.parent,
-            "model"
-        ),
+            "data",
+            identifier,
+        )
+    data_path = os.path.join(data_path, "model")
+
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+
+    # create a directory and save the model to it
+    os.makedirs(
+        data_path,
         exist_ok = True
     )
-    modelpath = os.path.join(
-        Path(__file__).parent.parent,
-        "model",
+    model_path = os.path.join(
+        data_path,
         "synthmodel-" + identifier
     )
     torch.save(
         model.state_dict(),
-        modelpath
+        model_path
     )
 
     # and also save a copy of the config
     shutil.copy(
-        src = os.path.join(
-            Path(__file__).parent.parent,
-            "config.yml"
-        ),
+        src = config_path,
         dst = os.path.join(
-            Path(__file__).parent.parent,
-            "model",
-            "synthmodel-" + os.path.splitext(identifier)[0] + ".yml"
+            data_path,
+            "synthmodel-" + Path(identifier).stem + ".yml"
         )
     )
 
-    print("Saved model to: " + modelpath)
+    print("Saved model to: " + model_path + identifier)
 
 def request_model_save(
-        model: SynthModel,
-        identifier: str | None = None
-    ) -> None:
-        valid = False
-        while not valid:
-            # request User input
-            inp = input(
-                "The model has not been saved during this last epoch, "
-                "because it's worse than at its best.\n"
-                "Do you still want to save it? [Y/n]"
+    model: SynthModel,
+    data_path: str | None = None,
+    config_path: str | None = None,
+    identifier: str = NOW
+) -> None:
+    valid = False
+    while not valid:
+        # request User input
+        inp = input(
+            "The model has not been saved during this last epoch, "
+            "because it's worse than at its best.\n"
+            "Do you still want to save it? [Y/n]"
+        )
+        # do some cleaning
+        inp = inp.lower().strip()
+
+        # and call the save function and exit
+        if inp in ["yes", "y", ""]:
+            save_model(
+                model = model,
+                data_path = data_path,
+                config_path = config_path,
+                identifier = identifier
             )
-            # do some cleaning
-            inp = inp.lower().strip()
+            return
 
-            # and call the save function and exit
-            if inp in ["yes", "y", ""]:
-                save_model(
-                    model = model,
-                    identifier = identifier
-                )
-                return
+        if inp in ["no", "n"]:
+            return
 
-            if inp in ["no", "n"]:
-                return
-
-            print("Invalid Input!")
+        print("Invalid Input!")
 
 
 def load_model(
-    identifier: str | None = None,
+    data_path: str | None = None,
+    config_path: str | None = None,
+    identifier: str  = NOW,
 ) -> SynthModel:
     """
     A helper function to nicely load a Model previously saved to Disk.
@@ -143,36 +151,35 @@ def load_model(
     :rtype: SynthModel
     """
 
-    if identifier is None:
-        identifier = NOW + ".pt"
+    # check if all the parameters are set, and set them if not
 
-    if "." not in identifier:
-        raise ValueError(
-            "Expected file extension. Try again with a '.fileextension'."
+    if Path(identifier).suffix == '':
+        identifier = identifier + ".pt"
+
+    if data_path is None:
+        data_path = os.path.join(
+            Path(__file__).parent.parent,
+            "data",
+            identifier,
         )
+    data_path = os.path.join(data_path, "model")
 
 
     # load config
-    _, cfg = load_config(
-        os.path.join(
-            Path(__file__).parent.parent,
-            "config.yml"
-        )
-    )
+    _, cfg = load_config(config_path)
 
     # load model
+    model_path = os.path.join(
+        data_path,
+        "synthmodel-" + identifier
+    )
     model = SynthModel(cfg)
     model.load_state_dict(
-        torch.load(
-            os.path.join(
-                Path(__file__).parent.parent,
-                "model",
-                "synthmodel-" + identifier
-            )
-        )
+        torch.load(model_path)
     )
 
     model.eval()
+    print(f"Successfully loaded Model from {model_path}!")
     return model
 
 #####################################################
@@ -188,7 +195,8 @@ class DataHandler:
         self,
         recorder: functional.probe.OutputMonitor,
         time_steps: int = 1000,
-        datapath: str = "img/",
+        data_path: str | None = None,
+        identifier: str = NOW
     ) -> None:
         """
         A Class for neatly wrapping an OutputMonitor.
@@ -198,16 +206,27 @@ class DataHandler:
         :type recorder: snntorch.functional.probe.OutputMonitor
         :param time_steps: The time-length of the samples passed through the network.
         :type time_steps: int
-        :param datapath: Path to a folder where the output should be saved to.
-        :type datapath: str, optional
+        :param data_path: Path to a folder where the output should be saved to.
+        :type data_path: str, optional
         """
 
         self.recorder = recorder
-        self.now = NOW
-        self.path = os.path.join(
-            Path(__file__).parent.parent,
-            datapath,
-            self.now
+        self.id = identifier
+
+        # path stuff
+        if data_path is None:
+            data_path = os.path.join(
+                Path(__file__).parent.parent,
+                "data",
+                identifier
+            )
+        self.img_path = os.path.join(
+            data_path,
+            "img"
+        )
+        self.bin_path = os.path.join(
+            data_path,
+            "bin"
         )
 
         self.time_steps = time_steps
@@ -530,12 +549,13 @@ class DataHandler:
 
         if save:
             os.makedirs(
-                self.path,
+                self.img_path,
                 exist_ok = True
             )
             os.environ["MPLBACKEND"] = "pdf"
 
-        prefix = name_ext if name_ext else self.now
+        if name_ext is None:
+            name_ext = self.id
 
         FIG_SIZE = (23.4, 16.5) # A2 papersize
         DPI = 300
@@ -598,32 +618,32 @@ class DataHandler:
             if save:
                 fig.savefig(
                     os.path.join(
-                        self.path,
-                        f"tendencies-{prefix}-{key}.pdf"
+                        self.img_path,
+                        f"tendencies-{name_ext}-{key}.pdf"
                     ),
                     format = "pdf"
                 )
                 fig.clear()
 
         if save:
-            # copy config
-            config_path = os.path.join(
-                self.path,
-                "config.yml"
-            )
-            # but only if it hasn't been copied yet
-            if not os.path.exists(config_path):
-                shutil.copy(
-                    src = os.path.join(
-                        Path(__file__).parent.parent,
-                        "config.yml"
-                    ),
-                    dst = config_path
-                )
+            # # copy config
+            # config_path = os.path.join(
+            #     self.path,
+            #     "config.yml"
+            # )
+            # # but only if it hasn't been copied yet
+            # if not os.path.exists(config_path):
+            #     shutil.copy(
+            #         src = os.path.join(
+            #             Path(__file__).parent.parent,
+            #             "config.yml"
+            #         ),
+            #         dst = config_path
+            #     )
 
             # and pickle the measurements
             with open(
-                os.path.join(self.path, f"measurements-{prefix}.pkl"),
+                os.path.join(self.bin_path, f"measurements-{name_ext}.pkl"),
                 "wb+"
             ) as file:
                 pickle.dump(
@@ -899,17 +919,19 @@ class DataHandler:
 
         # pre-execution checks
         if not self._tendencies:
-            raise ValueError(
+            raise UnboundLocalError(
                 "Tendencies have not been calculated before. " \
                 "Please call measure_tendencies() before you call this function."
             )
 
         if save:
             os.makedirs(
-                self.path,
+                self.img_path,
                 exist_ok = True
             )
             os.environ["MPLBACKEND"] = "pdf"
+        if name_ext is None:
+            name_ext = self.id
 
         # init empty lists
         rsyncs = []
@@ -965,11 +987,10 @@ class DataHandler:
         fig.suptitle("RSync per Class and Layer")
 
         if save:
-            prefix = name_ext if name_ext else self.now
             fig.savefig(
                 os.path.join(
-                    self.path,
-                    f"rsyncs-{prefix}.pdf"
+                    self.img_path,
+                    f"rsyncs-{name_ext}.pdf"
                 ),
                 format = "pdf"
             )
@@ -984,7 +1005,8 @@ class DataHandler:
         name_ext: str | None = None
     ) -> None:
 
-        prefix = name_ext if name_ext else self.now
+        if name_ext is None:
+            name_ext = self.id
 
         self.metrics = {}
         if loss:
@@ -994,7 +1016,7 @@ class DataHandler:
 
         # and pickle the measurements
         with open(
-            os.path.join(self.path, f"metrics-{prefix}.pkl"),
+            os.path.join(self.bin_path, f"metrics-{name_ext}.pkl"),
             "wb+"
         ) as file:
             pickle.dump(

@@ -1,7 +1,7 @@
 from data import DataHandler, load_config, request_model_save, save_model
-from imports import NOW, argparse, functional, torch
+from imports import NOW, argparse, functional, sys, torch
 from imports import snntorch as snn
-from misc import check_working_directory
+from misc import check_working_directory, create_datapath
 from synth_data import DataGenerator
 from synth_model import SynthModel
 from tracker import MetricsTracker
@@ -11,6 +11,10 @@ def main(
     args: argparse.Namespace
 ):
     cfg_data, cfg_model = load_config(args.cfg_path)
+    data_path = create_datapath(
+        data_path = args.save_path,
+        identifier = args.identifier
+    )
 
     # initialise datagenerator
     print("Initialising Classes...")
@@ -44,11 +48,11 @@ def main(
         handler = DataHandler(
             recorder = recorder,
             time_steps = cfg_data.get("time_steps", {"val": 1000})["val"],
-            datapath = "img/"
+            data_path = data_path
         )
 
     # and some simple loss/acc tracker
-    tracker = MetricsTracker()
+    tracker = MetricsTracker(data_path)
 
     print("Done!")
 
@@ -100,14 +104,19 @@ def main(
 
             if args.save_model:
                 save_model(
-                    model,
-                    f"{NOW}.pt"
+                    model = model,
+                    data_path = data_path,
+                    config_path = args.cfg_path,
+                    identifier = args.identifier
                 )
             best_loss = cur_loss
             cur_patience = 0
         else:
             cur_patience += 1
-            print(f"No improvement. Patience: {cur_patience}/{cfg_model.get("patience", 5)}")
+            print(
+                f"No improvement. Patience: "
+                f"{cur_patience}/{cfg_model.get("patience", 5)}"
+            )
 
         # and update the current loss
 
@@ -132,11 +141,11 @@ def main(
                 curated
             )
             handler.visualise_tendencies(       # pyright: ignore[reportPossiblyUnboundVariable]
-                name_ext = f"{NOW}-ep{e}"
+                name_ext = f"{args.identifier}-ep{e}"
             )
             handler.save_metrics(               # pyright: ignore[reportPossiblyUnboundVariable]
                 rec_loss, rec_acc,
-                name_ext = f"{NOW}-ep{e}"
+                name_ext = f"{args.identifier}-ep{e}"
             )
 
             handler.disable()                   # pyright: ignore[reportPossiblyUnboundVariable]
@@ -148,11 +157,13 @@ def main(
         if cur_patience >= cfg_model.get("patience", 5):
             break
 
-    # if model._best_loss != cur_loss:
-    #     request_model_save(
-    #         model = model,
-    #         identifier = f"{NOW}-ep{cfg_model.get("epochs", 100)}.pt"
-    #     )
+    if model._best_loss != cur_loss and sys.stdin.isatty():
+        request_model_save(
+            model = model,
+            data_path = data_path,
+            config_path = args.cfg_path,
+            identifier = f"{args.identifier}-ep{cfg_model.get("epochs", 100)}.pt"
+        )
 
     tracker.plot(train = True)
     tracker.plot(train = False)
@@ -169,7 +180,7 @@ def resolve_arguments():
         "-c",
         type = str,
         required = False,
-        default = "config.yml",
+        default = None,
         help = "Path to the config directory. Defaults to ./config.yml"
     )
     parser.add_argument(
@@ -193,6 +204,22 @@ def resolve_arguments():
         choices = ["jitter", "shuffle"],
         required = False,
         help = "Defines how to augment the forward pass of the model when recording. Options: 'jitter', 'shuffle'. Default: None"
+    )
+    parser.add_argument(
+        "--save-path",
+        "-p",
+        type = str,
+        required = False,
+        default = None,
+        help = "Path for the visualisations / models / outputs to be saved."
+    )
+    parser.add_argument(
+        "--identifier",
+        "-i",
+        type = str,
+        required = False,
+        default = NOW,
+        help = "Default Filename for visualisations / models / outputs."
     )
     args = parser.parse_args()
     if args.augment and not args.record_hidden:
