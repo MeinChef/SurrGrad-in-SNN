@@ -1,4 +1,4 @@
-from imports import Callable, functional, os, re, surrogate, torch, warnings
+from imports import NOW, Callable, Path, functional, os, re, surrogate, torch, warnings
 from loss import FirstSpikeLoss, MeanCELoss, SpikemaxLoss
 from surrogate import stable_sigmoid
 
@@ -164,22 +164,37 @@ def resolve_optim(config: dict, params) -> torch.optim.Optimizer:
     else:
         raise NameError("The optimizer specified in config is unresolveable. Check source code and typos")
 
-def make_path(path: str | list[str]) -> os.PathLike:
-    """
-    Function for creating cross-os-compatible paths from strings.
+def create_datapath(
+    data_path: str | Path | None,
+    identifier: str | None
+) -> str:
+    if data_path is None:
+        path = os.path.join(
+            Path(__file__).parent.parent,
+            "data"
+        )
+    elif not os.path.isabs(data_path):
+        path = os.path.join(
+            Path(__file__).parent.parent,
+            data_path
+        )
+    else:
+        path = data_path
 
-    :param path: String to be converted to os.PathLike
-    :type path: str or list of str, required
-    :return: Path in the correct format for the current OS
-    :rtype: os.PathLike object
-    """
+    if identifier is None:
+        identifier = NOW
 
-    if isinstance(path, str):
-        path = [path]
+    new_path = os.path.join(
+        path,
+        identifier
+    )
 
-    path_lst = []
-    for part in path:
-        part = re.split(r'[/\\]', part)
-        path_lst.extend(part)
-    new_path = os.path.join(*path_lst)
+    # create the top-data directory
+    os.makedirs(new_path)
+    # and directories for model, img, and bin
+    for dir in ["model", "img", "bin"]:
+        os.makedirs(os.path.join(
+            new_path, dir
+        ))
+
     return new_path
