@@ -96,7 +96,7 @@ def main(
         tracker.update_val(loss, acc)
         tracker.announce()
 
-        cur_loss = torch.tensor(loss).mean()
+        cur_loss = tracker.last_val_loss
         print(
             f"DEBUG: cur_loss={cur_loss!r}, "
             f"best_loss={best_loss!r}, "

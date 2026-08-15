@@ -32,16 +32,23 @@ class MetricsTracker:
         loss: list,
         acc: list
     ) -> None:
-        self.train_loss.append(loss)
-        self.train_acc.append(acc)
+        self.train_loss.append(list(loss))
+        self.train_acc.append(list(acc))
+
+        self.last_train_loss = np.mean(loss).item()
+        self.last_train_acc  = np.mean(acc).item()
 
     def update_val(
         self,
         loss: list,
         acc: list
     ) -> None:
-        self.val_loss.append(loss)
-        self.val_acc.append(acc)
+        self.val_loss.append(list(loss))
+        self.val_acc.append(list(acc))
+
+        self.last_val_loss = np.mean(loss).item()
+        self.last_val_acc  = np.mean(acc).item()
+
 
     def save(
         self,
@@ -112,16 +119,16 @@ class MetricsTracker:
         mode = "Training" if train else "Testing"
 
         if train:
-            loss = self.train_loss
-            acc  = self.train_acc
+            loss = self.last_train_loss
+            acc  = self.last_train_acc
         else:
-            loss = self.val_loss
-            acc  = self.val_acc
+            loss = self.last_val_loss
+            acc  = self.last_val_acc
 
         print(
             f"Model achieved during {mode}:\n"
-            f"Loss of {np.asarray(loss).mean()} "
-            f"and Accuracy of {np.asarray(acc).mean() * 100}%"
+            f"Loss of {loss} "
+            f"and Accuracy of {acc * 100}%"
         )
 
 
