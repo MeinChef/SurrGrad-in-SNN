@@ -97,6 +97,11 @@ def main(
         tracker.announce()
 
         cur_loss = torch.tensor(loss).mean()
+        print(
+            f"DEBUG: cur_loss={cur_loss!r}, "
+            f"best_loss={best_loss!r}, "
+            f"cur_loss < best_loss = {cur_loss < best_loss}"
+        )
         # save model if it got better
         if cur_loss < best_loss:
             # update saved model
