@@ -301,7 +301,7 @@ class SynthModel(torch.nn.Module):
             for i, (x, target) in tqdm.tqdm(
                 iterable = enumerate(data),
                 total = len(data),
-                desc = "Training Batches"
+                desc = "Evaluating Batches"
             ):
                 # check if the training has been already done to the specified amount
                 if i == self._partial_test:
