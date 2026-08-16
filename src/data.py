@@ -1,5 +1,6 @@
 from imports import (
     DEFAULT_CONFIG_PATH,
+    DEVICE,
     NOW,
     PCA,
     ROOT,
@@ -166,8 +167,19 @@ def load_model(
     data_path = os.path.join(data_path, "model")
 
 
-    # load config
-    _, cfg = load_config(config_path)
+    # try loading config that's probably been saved alongside the model:
+    if config_path is None:
+        try:
+            cfg_name = Path(identifier).stem + ".yml"
+            _, cfg = load_config(os.path.join(
+                data_path,
+                "synthmodel-" + cfg_name
+            ))
+        except FileNotFoundError:
+            # if that didn't work, fall back to default choice
+            _, cfg = load_config(config_path)    
+    else:
+        _, cfg = load_config(config_path)    
 
     # load model
     model_path = os.path.join(
@@ -179,7 +191,11 @@ def load_model(
 
     model = SynthModel(cfg)
     model.load_state_dict(
-        torch.load(model_path)
+        torch.load(
+            model_path,
+            map_location = DEVICE
+        ),
+        strict = False
     )
 
     model.eval()

@@ -54,12 +54,14 @@ class PSPFilter(torch.nn.Module):
 
         self.register_buffer(
             "q",
-            torch.zeros(1, neurons)
+            torch.zeros(1, neurons),
+            persistent = False
         )
 
         self.register_buffer(
             "r",
-            torch.zeros(1, neurons)
+            torch.zeros(1, neurons),
+            persistent = False
         )
 
     def reset(self, batch_size = None):
