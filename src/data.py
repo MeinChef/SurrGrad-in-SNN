@@ -398,8 +398,8 @@ class DataHandler:
     def measure_rate(
         self,
         spikes: torch.Tensor,
-        dt: float = 0.001,
-        tau: float = 0.02,
+        dt: float = 1.,
+        tau: float = 20.,
     ) -> torch.Tensor:
         """
         Estimate instantaneous firing rate from spike trains using
