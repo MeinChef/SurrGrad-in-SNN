@@ -1,8 +1,6 @@
 from data import DataHandler, load_config, load_model
-from imports import argparse, functional, os
-from imports import snntorch as snn
+from imports import argparse, os, pickle, tqdm
 from information import InformationEstimator
-from misc import get_network_response
 from synth_data import DataGenerator
 
 
@@ -32,13 +30,8 @@ def main(args: argparse.Namespace):
     )
 
     # initialise the recorder
-    recorder = functional.probe.OutputMonitor(
-        net = model,
-        instance = snn.Leaky
-    )
-    recorder.disable()
     handler = DataHandler(
-        recorder = recorder,
+        model = model,
         time_steps = cfg_data.get("time_steps", {"val": 1000})["val"],
         data_path = args.data_path
     )
@@ -53,27 +46,47 @@ def main(args: argparse.Namespace):
     total_samples = lcm * cfg_model.get("batch_size", 128)
 
     print(f"Generating Data ({total_samples} total)...")
-    train, = datagen.generate_dataset(
+    train = datagen.generate_dataset(
         no_samples  = total_samples,
         batch_size = cfg_data.get("batch_size", 128),
         shuffle = True,
         train_split = 0,
         prefetch = cfg_data.get("prefetch", 4)
-    )
-    curated, = datagen.generate_dataset(
-        no_samples  = cfg_model.get("ssamples", 10),
+    )[0]
+    curated = datagen.generate_dataset(
+        no_samples  = cfg_model.get("samples", 10),
         batch_size  = cfg_model.get("samples", 10),
         train_split = 0,
         shuffle     = False,
         prefetch    = cfg_data.get("prefetch", 1),
-    )
+    )[0]
+
+    # prep data for estimator
+    _, labels = handler.get_network_response(model, train)
+    centers, responses = handler.get_output_repr("count", step = 10) # TODO:CHANGE HERE
+
     print("Done!")
 
-    handler.get_network_response(model, train)
-    resp, label = handler.get_output_repr("count")
-    estim.fit(
-        resp, label,
-    )
+    # fit the estimator on all data-windows
+    all_info = []
+    for window_idx, ctr in tqdm.tqdm(
+        enumerate(centers),
+        total = len(centers),
+        desc = "Training Decoder Windows"
+    ):
+        resp = responses[:, window_idx, :]
+        estim.fit(
+            resp, labels
+        )
+        info = estim.estimate_with_details()
+        # save each estimator
+        estim.save(args.data_path, f"{window_idx}.pt")
+        all_info.append(info)
+
+    # and the outputs to a separate file
+    infofile = os.path.join(args.data_path, "estim", "info.pkl")
+    with open(infofile, "wb+") as file:
+        pickle.dump((all_info, centers), file)
 
     handler.enable()
     if args.augment:
@@ -96,7 +109,7 @@ def main(args: argparse.Namespace):
         name_ext = args.identifier
     )
     # TODO: visualise information criteria
-    estim.estimate_with_details()
+    # estim.estimate_with_details()
     print("Success!")
     return True
 
