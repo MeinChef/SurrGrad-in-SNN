@@ -69,12 +69,10 @@ def main(args: argparse.Namespace):
     )
     print("Done!")
 
-    train, val, test = get_network_response(
-        model, train
-    )
+    handler.get_network_response(model, train)
+    resp, label = handler.get_output_repr("count")
     estim.fit(
-        train, val,
-        time_steps = cfg_data.get("time_steps", {"val": 1000})["val"]
+        resp, label,
     )
 
     handler.enable()

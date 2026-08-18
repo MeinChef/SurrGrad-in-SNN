@@ -86,16 +86,76 @@ class InformationEstimator:
         self.device = device if device is not None else DEVICE
 
         self.decoder = None
-        self.classes = None
         self.train_loss = []
         self.validation_loss = []
 
+    @staticmethod
+    def _split(
+        n: int,
+        train_fraction: float,
+        validation_fraction: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        if train_fraction <= 0 or validation_fraction < 0:
+            raise ValueError("Invalid train/validation fractions.")
+
+        if train_fraction + validation_fraction >= 1:
+            raise ValueError(
+                "train_fraction + validation_fraction must be < 1."
+            )
+
+        indices = torch.randperm(n, generator=TORCH_RNG)
+
+        n_train = int(n * train_fraction)
+        n_validation = int(n * validation_fraction)
+
+        train_idx = indices[:n_train]
+        validation_idx = indices[
+            n_train:n_train + n_validation
+        ]
+        test_idx = indices[
+            n_train + n_validation:
+        ]
+
+        return train_idx, validation_idx, test_idx
+
+    def _prep_data(
+        self,
+        responses, labels,
+        train_frac, val_frac,
+        batch_size: int = 128
+    ):
+        train_idx, val_idx, test_idx = self._split(
+            responses.shape[0],
+            train_frac, val_frac
+        )
+
+        x_train = responses[train_idx].float()
+        x_val   = responses[val_idx  ].float()
+        x_test  = responses[test_idx ].float()
+
+        y_train = labels[train_idx]
+        y_val   = labels[val_idx  ]
+        y_test  = labels[test_idx ]
+
+        ds_train = torch.utils.data.TensorDataset(x_train, y_train)
+        ds_val   = torch.utils.data.TensorDataset(x_val, y_val)
+        ds_test  = torch.utils.data.TensorDataset(x_test, y_test)
+
+        ld_train = torch.utils.data.DataLoader(ds_train, batch_size, True)
+        ld_val   = torch.utils.data.DataLoader(ds_val,   batch_size, True)
+        ld_test  = torch.utils.data.DataLoader(ds_test,  batch_size, True)
+
+        return ld_train, ld_val, ld_test
+
+
     def fit(
         self,
-        train: torch.utils.data.TensorDataset | torch.utils.data.Subset,
-        val: torch.utils.data.TensorDataset | torch.utils.data.Subset,
-        time_steps: int = 1000,
+        responses: torch.Tensor,
+        labels: torch.Tensor,
         num_classes: int = 2,
+        train_fraction: float = 0.7,
+        validation_fraction: float = 0.15,
         batch_size: int = 128,
     ) -> "InformationEstimator":
 
@@ -115,8 +175,10 @@ class InformationEstimator:
         self
         """
 
+        self.time_steps = responses.shape[1]
+
         self.decoder = InformationDecoder(
-            input_dim = time_steps,
+            input_dim = self.time_steps,
             num_classes = num_classes,
             hidden_dim = self.hidden_dim,
         ).to(self.device)
@@ -129,16 +191,12 @@ class InformationEstimator:
 
         lossfn = torch.nn.CrossEntropyLoss()
 
-        train_loader = torch.utils.data.DataLoader(
-            train,
-            batch_size = batch_size,
-            shuffle = True,
+        train, val, test = self._prep_data(
+            responses, labels,
+            train_fraction, validation_fraction,
+            batch_size
         )
-        val_loader = torch.utils.data.DataLoader(
-            val, 
-            batch_size = batch_size,
-            shuffle = True
-        )
+        self.test = test
 
         best_validation_loss = float("inf")
         best_state = None
@@ -151,12 +209,10 @@ class InformationEstimator:
             total = self.max_epochs,
             desc = "Training InformationDecoder",
         ):
-            # running_loss = 0.0
-            # n_samples = 0
             val_loss = []
 
             self.decoder.train()
-            for x, label in train_loader:
+            for x, label in train:
                 pred = self.decoder(x)
                 loss = lossfn(pred, label)
 
@@ -165,16 +221,9 @@ class InformationEstimator:
                 optimizer.step()
                 # don't care about the train loss, thus no saving that
 
-            #     running_loss += (
-            #         loss.item() * x.shape[0]
-            #     )
-            #     n_samples += x.shape[0]   # tf is this
-
-            # train_loss = running_loss / n_samples
-
             self.decoder.eval()
             with torch.no_grad():
-                for x, label in val_loader:
+                for x, label in val:
                     pred = self.decoder(x)
                     loss = lossfn(pred, label).item()
                     val_loss.append(loss)
@@ -210,9 +259,8 @@ class InformationEstimator:
     @torch.no_grad()
     def posterior(
         self,
-        responses: torch.Tensor,
-        batch_size: int = 128,
-    ) -> torch.Tensor:
+        data: torch.utils.data.DataLoader,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         """
         Calculate O_s(r) = estimated P(S=s | R=r).
@@ -227,24 +275,24 @@ class InformationEstimator:
                 "The decoder has not been fitted yet."
             )
 
-        responses = responses.float().to(self.device)
-
         probabilities = []
+        labels = []
 
-        for batch in responses.split(batch_size):
+        for x, label in data:
 
-            logits = self.decoder(batch)
+            logits = self.decoder(x)
 
             probabilities.append(
-                torch.softmax(logits, dim=-1)
+                torch.softmax(logits, dim = -1)
             )
+            labels.append(label)
 
-        return torch.cat(probabilities, dim=0)
+        return torch.cat(probabilities, dim = 0), torch.cat(labels, dim = 0)
 
     @torch.no_grad()
     def estimate(
         self,
-        test: torch.utils.data.TensorDataset | torch.utils.data.Subset,
+        test: torch.utils.data.DataLoader | None =  None,
         batch_size: int = 4096,
     ) -> float:
 
@@ -259,21 +307,10 @@ class InformationEstimator:
             raise RuntimeError(
                 "The decoder has not been fitted yet."
             )
-        # get x, labels from tensordataset
-        if isinstance(test, torch.utils.data.TensorDataset):
-            responses, labels = test.tensors
-        elif isinstance(test, torch.utils.data.Subset):
-            raw_responses = test.dataset.tensors[0]         # pyright: ignore[reportAttributeAccessIssue] (stupid linter doesn't know)
-            raw_labels    = test.dataset.tensors[1]         # pyright: ignore[reportAttributeAccessIssue] (that these are tensordatasets)
-            responses = raw_responses[test.indices]
-            labels    =    raw_labels[test.indices]
-        else:
-            raise TypeError(f"test must be a TensorDataset or Subset. Got {type(test)} instead.")
+        if test is None:
+            test = self.test
 
-        probabilities = self.posterior(
-            responses,
-            batch_size = batch_size,
-        )
+        probabilities, labels = self.posterior(test)
 
         # ---------------------------------------------------------
         # Estimate P(S)
@@ -323,8 +360,7 @@ class InformationEstimator:
     @torch.no_grad()
     def estimate_with_details(
         self,
-        test: torch.utils.data.TensorDataset | torch.utils.data.Subset,
-        batch_size: int = 128
+        test: torch.utils.data.DataLoader | None = None,
     ) -> dict:
 
         """
@@ -334,30 +370,18 @@ class InformationEstimator:
             raise RuntimeError(
                 "The decoder has not been fitted yet."
             )
-        # get x, labels from tensordataset
-        if isinstance(test, torch.utils.data.TensorDataset):
-            responses, labels = test.tensors
-        elif isinstance(test, torch.utils.data.Subset):
-            raw_responses = test.dataset.tensors[0]         # pyright: ignore[reportAttributeAccessIssue] (stupid linter doesn't know)
-            raw_labels    = test.dataset.tensors[1]         # pyright: ignore[reportAttributeAccessIssue] (that these are tensordatasets)
-            responses = raw_responses[test.indices]
-            labels    =    raw_labels[test.indices]
-        else:
-            raise TypeError(f"test must be a TensorDataset or Subset. Got {type(test)} instead.")
 
-        probabilities = self.posterior(
-            responses,
-            batch_size = batch_size,
-        )
-        probabilities = self.posterior(responses)
-        labels = labels.flatten().long().to(self.device)
+        if test is None:
+            test = self.test
+
+        probabilities, labels = self.posterior(test)
 
         if self.prior == "decoder":
-            prior = probabilities.mean(dim=0)
+            prior = probabilities.mean(dim = 0)
         else:
             prior = torch.bincount(
                 labels,
-                minlength=probabilities.shape[1],
+                minlength = probabilities.shape[1],
             ).float()
             prior /= prior.sum()
 
@@ -391,5 +415,5 @@ class InformationEstimator:
             "decoder_accuracy": accuracy,
             "prior": prior.cpu(),
             "posterior": probabilities.cpu(),
-            "classes": self.classes,
+            # "classes": self.classes,
         }
