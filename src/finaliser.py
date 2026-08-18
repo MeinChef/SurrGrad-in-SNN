@@ -96,7 +96,7 @@ def main(args: argparse.Namespace):
         name_ext = args.identifier
     )
     # TODO: visualise information criteria
-    estim.estimate_with_details(test)
+    estim.estimate_with_details()
     print("Success!")
     return True
 

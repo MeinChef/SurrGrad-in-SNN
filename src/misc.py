@@ -204,8 +204,8 @@ def create_datapath(
 def get_network_response(
     model,
     data: torch.utils.data.DataLoader,
-    split: list[float] | None = None,
-) -> list[torch.utils.data.Subset]:
+    # split: list[float] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Extracts network responses from a trained model and splits the resulting dataset
     into train/validation/test subsets according to the specified split ratios.
@@ -230,11 +230,6 @@ def get_network_response(
     :raises AssertionError: If the sum of split fractions is not approximately 1.0.
     :raises ValueError: If the data loader is empty or the model produces no output.
     """
-
-    if split == None:
-        split = [0.7, 0.15, 0.15]
-    if not np.isclose(np.sum(split), 1.0, atol=1e-6):
-        raise AssertionError("split fractions must sum to 1.0")
 
     model.eval()
     rec = functional.probe.OutputMonitor(model, snn.Leaky)
@@ -271,6 +266,4 @@ def get_network_response(
     outputs = outputs.permute(1, 0, -1)             # [all_samples, T, N]
     labels  = torch.cat(labels)                     # [all_samples]
 
-    ds = torch.utils.data.TensorDataset(outputs, labels)      # only accepts tensors of same first dim, need to permutate outputs
-    ds = torch.utils.data.random_split(ds, split, generator = TORCH_RNG)
-    return ds
+    return outputs, labels
