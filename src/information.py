@@ -1,4 +1,4 @@
-from imports import DEVICE, TORCH_RNG, torch, tqdm
+from imports import DEVICE, TORCH_RNG, torch, tqdm, os
 
 
 class InformationDecoder(torch.nn.Module):
@@ -14,7 +14,7 @@ class InformationDecoder(torch.nn.Module):
     def __init__(
         self,
         input_dim: int,
-        num_classes: int,
+        num_classes: int = 2,
         hidden_dim: int = 6,
     ) -> None:
         super().__init__()
@@ -86,7 +86,6 @@ class InformationEstimator:
         self.device = device if device is not None else DEVICE
 
         self.decoder = None
-        self.train_loss = []
         self.validation_loss = []
 
     @staticmethod
@@ -129,6 +128,9 @@ class InformationEstimator:
             responses.shape[0],
             train_frac, val_frac
         )
+        self.train_idx = train_idx
+        self.val_idx = val_idx
+        self.test_idx = test_idx
 
         x_train = responses[train_idx].float()
         x_val   = responses[val_idx  ].float()
@@ -202,17 +204,14 @@ class InformationEstimator:
         best_state = None
         epochs_without_improvement = 0
 
-        self.train_loss = []
         self.validation_loss = []
-        for _ in tqdm.tqdm(
-            range(self.max_epochs),
-            total = self.max_epochs,
-            desc = "Training InformationDecoder",
-        ):
+        for _ in range(self.max_epochs):
             val_loss = []
 
             self.decoder.train()
             for x, label in train:
+                x = x.to(DEVICE)
+                label = label.to(DEVICE)
                 pred = self.decoder(x)
                 loss = lossfn(pred, label)
 
@@ -224,11 +223,14 @@ class InformationEstimator:
             self.decoder.eval()
             with torch.no_grad():
                 for x, label in val:
+                    x = x.to(DEVICE)
+                    label = label.to(DEVICE)
                     pred = self.decoder(x)
                     loss = lossfn(pred, label).item()
                     val_loss.append(loss)
 
-            epoch_val_loss = torch.mean(torch.tensor(val_loss))
+            epoch_val_loss = torch.mean(torch.tensor(val_loss)).cpu()
+            self.validation_loss.append(epoch_val_loss)
 
             if epoch_val_loss < best_validation_loss:
                 best_validation_loss = epoch_val_loss
@@ -375,6 +377,8 @@ class InformationEstimator:
             test = self.test
 
         probabilities, labels = self.posterior(test)
+        probabilities = probabilities.to(self.device)
+        labels = labels.to(self.device)
 
         if self.prior == "decoder":
             prior = probabilities.mean(dim = 0)
@@ -417,3 +421,82 @@ class InformationEstimator:
             "posterior": probabilities.cpu(),
             # "classes": self.classes,
         }
+
+    def save(
+        self,
+        path: str,
+        ident: str
+    ) -> None:
+
+        path = os.path.join(path, "estim")
+        os.makedirs(path, exist_ok = True)
+
+        if self.decoder is None:
+            raise RuntimeError(
+                "Cannot save an unfitted estimator."
+            )
+
+        torch.save(
+            {
+                "decoder_state_dict": self.decoder.state_dict(),
+
+                "train_idx": self.train_idx,
+                "val_idx": self.val_idx,
+                "test_idx": self.test_idx,
+
+                "hidden_dim": self.hidden_dim,
+                "learning_rate": self.learning_rate,
+                "weight_decay": self.weight_decay,
+                "max_epochs": self.max_epochs,
+                "patience": self.patience,
+                "prior": self.prior,
+
+                "validation_loss": self.validation_loss,
+            },
+            os.path.join(path, ident),
+        )
+
+    @classmethod
+    def load(
+        cls,
+        path,
+        ident,
+        input_dim: int,
+    ):
+        path = os.path.join(path, "estim")
+
+        checkpoint = torch.load(
+            os.path.join(path, ident),
+            map_location="cpu",
+        )
+
+        estimator = cls(
+            hidden_dim=checkpoint["hidden_dim"],
+            learning_rate=checkpoint["learning_rate"],
+            weight_decay=checkpoint["weight_decay"],
+            max_epochs=checkpoint["max_epochs"],
+            patience=checkpoint["patience"],
+            prior=checkpoint["prior"],
+            device=DEVICE,
+        )
+
+        estimator.train_idx = checkpoint["train_idx"]
+        estimator.val_idx = checkpoint["val_idx"]
+        estimator.test_idx = checkpoint["test_idx"]
+
+        estimator.decoder = InformationDecoder(
+            input_dim=input_dim,
+            hidden_dim=estimator.hidden_dim,
+        ).to(estimator.device)
+
+        estimator.decoder.load_state_dict(
+            checkpoint["decoder_state_dict"]
+        )
+
+        estimator.decoder.eval()
+
+        estimator.validation_loss = checkpoint[
+            "validation_loss"
+        ]
+
+        return estimator
