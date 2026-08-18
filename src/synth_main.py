@@ -37,16 +37,9 @@ def main(
 
     # hot new shit
     if args.record_hidden:
-        # initialise the recorder
-        recorder = functional.probe.OutputMonitor(
-            net = model,
-            instance = snn.Leaky
-        )
-        recorder.disable()
-
         # and wrap it for more functions
         handler = DataHandler(
-            recorder = recorder,
+            model = model,
             time_steps = cfg_data.get("time_steps", {"val": 1000})["val"],
             data_path = data_path
         )

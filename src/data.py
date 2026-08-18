@@ -15,10 +15,12 @@ from imports import (
     plt,
     shutil,
     torch,
+    tqdm,
     yaml,
 )
 from imports import numpy as np
 from imports import seaborn as sns
+from imports import snntorch as snn
 from synth_model import SynthModel
 
 
@@ -214,7 +216,8 @@ class DataHandler:
     """
     def __init__(
         self,
-        recorder: functional.probe.OutputMonitor,
+        # recorder: functional.probe.OutputMonitor,
+        model: SynthModel,
         time_steps: int = 1000,
         data_path: str | None = None,
         identifier: str = NOW
@@ -231,7 +234,9 @@ class DataHandler:
         :type data_path: str, optional
         """
 
-        self.recorder = recorder
+        self.recorder = functional.probe.OutputMonitor(
+            model, snn.Leaky
+        )
         self.id = identifier
 
         # path stuff
@@ -304,7 +309,7 @@ class DataHandler:
 
         model.eval()
         # new output monitor to make sure we're  not accidentally deleting data from another one
-        rec = functional.probe.OutputMonitor(model)
+        rec = functional.probe.OutputMonitor(model, snn.Leaky)
         rec.enable()
         last_layer_key = rec.monitored_layers[-1]
 
@@ -312,15 +317,20 @@ class DataHandler:
         labels = []
         time_steps = 0
         with torch.no_grad():
-            for x, label in data: # add tqdm
+            for x, label in tqdm.tqdm(
+                data,
+                total = len(data),
+                desc = "Collecting Model Responses"
+            ): # add tqdm
+                x = x.to(DEVICE)
                 time_steps = x.shape[0]
                 model(x, batch_first = False)
                 labels.append(label)                    # [batch_size]
 
         # gets list[tuple(t0)[spk, mem], tuple(t1)[spk, mem], ...]
-        recordings = rec[last_layer_key]                # [T*B, N]
+        recordings = rec[last_layer_key]                # [T*B, B, N]
         # filters for spikes; list[spk(t0), spk(t1), ...]
-        recordings = [x for x, _ in recordings]         # [T*B, N]
+        recordings = [x for x, _ in recordings]         # [T*B, B, N]
         # since recordings is now over the whole dataset, it needs splitting
         # each sample should have only time_steps time steps
         # the whole recordings list should be no_batches * time_steps
@@ -328,14 +338,14 @@ class DataHandler:
         chunks = []
         for n in range(len(data)):
             chunk = recordings[
-                n * time_steps : (n+1) * time_steps     # [T, N]
+                n * time_steps : (n+1) * time_steps     # [T, B, N]
             ]
             chunks.append(torch.stack(chunk))
         # chunks should be now [len(data)] with items of [T, B, N]
 
         # make them to giant tensors
         outputs = torch.cat(chunks, dim = 1)            # [T, all_samples, N]
-        outputs = outputs.permute(1, 0, -1)             # [all_samples, T, N]
+        outputs = outputs.permute(1, 0, 2)              # [all_samples, T, N]
         labels  = torch.cat(labels)                     # [all_samples]
 
         self.raw_outputs = outputs
@@ -344,7 +354,7 @@ class DataHandler:
 
     def get_output_repr(
         self,
-        type: Literal["count", "smoothed"],  # noqa: F821
+        repr: Literal["count", "smoothed"],  # noqa: F821
         window_width: int = 20,
         step: int = 5
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -359,16 +369,16 @@ class DataHandler:
         outputs = []
         centers = starts + window_width / 2
 
-        if type == "count":
+        if repr == "count":
             for start in starts:
                 out = self.raw_outputs[
                     :,
-                    :,
-                    start: start + window_width
+                    start: start + window_width,
+                    :
                 ]
                 outputs.append(out.sum(dim = 1)) # sum window over time
 
-        elif type == "smoothed":
+        elif repr == "smoothed":
             rates = self.measure_rate(
                 self.raw_outputs,
                 dt = 1,
@@ -376,11 +386,11 @@ class DataHandler:
             )
             for start in starts:
                 out = rates[
-                    ...,
-                    start: start + window_width
+                    :,
+                    start: start + window_width,
+                    :
                 ]
                 outputs.append(out.flatten(start_dim=1))
-
         return centers, torch.stack(outputs, dim = 1)
 
 
