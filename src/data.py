@@ -7,6 +7,7 @@ from imports import (
     Axes,
     Figure,
     Literal,
+    MaxNLocator,
     Path,
     functional,
     matplotlib,
@@ -14,11 +15,15 @@ from imports import (
     pickle,
     plt,
     shutil,
+    signal,
     torch,
     tqdm,
     yaml,
 )
 from imports import numpy as np
+from imports import (
+    pandas as pd,
+)
 from imports import seaborn as sns
 from imports import snntorch as snn
 from synth_model import SynthModel
@@ -68,7 +73,7 @@ def save_model(
 
     # check if all the parameters are set, and set them if not
 
-    if Path(identifier).suffix == '':
+    if Path(identifier).suffix == "":
         identifier = identifier + ".pt"
 
     if data_path is None:
@@ -158,7 +163,7 @@ def load_model(
 
     # check if all the parameters are set, and set them if not
 
-    if Path(identifier).suffix == '':
+    if Path(identifier).suffix == "":
         identifier = identifier + ".pt"
 
     if data_path is None:
@@ -170,7 +175,7 @@ def load_model(
     data_path = os.path.join(data_path, "model")
 
 
-    # try loading config that's probably been saved alongside the model:
+    # try loading config that"s probably been saved alongside the model:
     if config_path is None:
         try:
             cfg_name = Path(identifier).stem + ".yml"
@@ -179,7 +184,7 @@ def load_model(
                 "synthmodel-" + cfg_name
             ))
         except FileNotFoundError:
-            # if that didn't work, fall back to default choice
+            # if that didn"t work, fall back to default choice
             _, cfg = load_config(config_path)    
     else:
         _, cfg = load_config(config_path)    
@@ -308,7 +313,7 @@ class DataHandler:
         """
 
         model.eval()
-        # new output monitor to make sure we're  not accidentally deleting data from another one
+        # new output monitor to make sure we"re  not accidentally deleting data from another one
         rec = functional.probe.OutputMonitor(model, snn.Leaky)
         rec.enable()
         last_layer_key = rec.monitored_layers[-1]
@@ -425,7 +430,7 @@ class DataHandler:
 
         all_measure = {}
 
-        # assuming only one batch, since that's the cleanest way
+        # assuming only one batch, since that"s the cleanest way
         inputs, labels = next(iter(data))
         # inputs should be a tensor of shape [time, batch, neuron]
         # and we want [batch, neuron, time] here
@@ -489,7 +494,7 @@ class DataHandler:
         :rtype: torch.Tensor
         """
         if spikes.device != "cpu":
-            spikes = spikes.to(torch.device('cpu'))
+            spikes = spikes.to(torch.device("cpu"))
 
         if spikes.isnan().any():
             raise ValueError(
@@ -710,7 +715,11 @@ class DataHandler:
             dpi = DPI
         )
 
-        for key in self._tendencies:
+        for key in tqdm.tqdm(
+            self._tendencies,
+            total = len(self._tendencies),
+            desc = "Plotting Spike Analysis"
+        ):
             measurements = self._tendencies[key]["measurements"]
 
             if save and not blocking:
@@ -734,22 +743,25 @@ class DataHandler:
                     height_ratios = HEIGHT_RATIOS
                 )
 
-            self.ylabel = True
+            all_stats = []
             for i, layer in enumerate(measurements):
                 self._plot_spikes(axes[0, i], measurements[layer])
                 if i == len(measurements) - 1:
                     self._plot_membrane(axes[0, i], measurements[layer])
                 self._plot_rate_heatmap(
-                    fig = fig, 
+                    fig = fig,
                     axes = axes[1, i],
                     cax = axes[2, i],
                     data = measurements[layer]
                 )
                 self._plot_isis(axes[3, i], measurements[layer])
-                self._plot_pca_trajectory(axes[4, i], measurements[layer])
+                _, stats = self._plot_pca_trajectory(axes[4, i], measurements[layer])
 
-                if self.ylabel:
-                    self.ylabel = False
+                # add layer key to stats and append
+                stats["layer"] = layer
+                all_stats.append(stats)
+
+            df_stats = pd.DataFrame(all_stats)
 
             fig.suptitle(
                 f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
@@ -757,6 +769,7 @@ class DataHandler:
             fig.tight_layout()
 
             if save:
+                # save figure
                 fig.savefig(
                     os.path.join(
                         self.img_path,
@@ -766,21 +779,30 @@ class DataHandler:
                 )
                 fig.clear()
 
+                # and pca csv
+                df_stats.to_csv(
+                    os.path.join(
+                        self.img_path,
+                        f"pca-{name_ext}-{key}.csv"
+                    ),
+                    index = False
+                )
+
+            else:
+                # print a clean table
+                print("\nPCA Analysis Summary:")
+                print(
+                    df_stats[[
+                        "layer",
+                        "pc1_var",
+                        "pc2_var",
+                        "d_eff",
+                        "n_pc_90"
+                    ]].to_string(index = False)
+                )
+
+
         if save:
-            # # copy config
-            # config_path = os.path.join(
-            #     self.path,
-            #     "config.yml"
-            # )
-            # # but only if it hasn't been copied yet
-            # if not os.path.exists(config_path):
-            #     shutil.copy(
-            #         src = os.path.join(
-            #             ROOT,
-            #             "config.yml"
-            #         ),
-            #         dst = config_path
-            #     )
 
             # and pickle the measurements
             with open(
@@ -834,19 +856,30 @@ class DataHandler:
             marker = "|"
         )
 
-        # axes.set_xlabel("Time (ms)")
+        # y axis setup
+        # axes.set_yticks(range(data["neurons"]))
+        axes.yaxis.set_major_locator(MaxNLocator(
+            nbins = 10,
+            integer = True
+        ))
+        axes.set_ylim(-0.5, data["neurons"] - 0.5)
+
         axes.set_xlim(0, data["time_steps"])
-        axes.set_ylim(-0.5, data["neurons"])
+
+        # labels
         axes.set_title("Spikes - RSync of " + "{:.2f}".format(data["rsync"]))
-        if self.ylabel:
-            axes.set_ylabel("Neurons")
+        axes.set_ylabel("Neurons")
+        axes.set_xlabel("Time (ms)")
+        axes.grid(True, alpha = 0.3, axis = "x")
 
         return axes
 
     def _plot_membrane(
         self,
         axes: Axes,
-        data: dict
+        data: dict,
+        threshold: float | None = None,
+        baseline: float | None = None
     ) -> Axes:
         """
         Convenience function for plotting the membrane potential on an Axis.
@@ -861,28 +894,52 @@ class DataHandler:
         """
 
         mem = data["membrane"].cpu().numpy()
-        # Ensure mem is float32/float64 and not clipped
+        # ensure mem is float32/float64 and not clipped
         mem = mem.astype(float)
 
         # Define offset: one unit apart (e.g., 1.0) for clarity
         offset = 1.0
         num_neurons = mem.shape[0]
 
-        # Create offset membrane potentials
-        # We'll add an offset per neuron: neuron * offset
-        # But we'll keep the original voltage values intact
+        # create offset membrane potentials
+        # we'll add an offset per neuron: neuron * offset
+        # but we"ll keep the original voltage values intact
         offset_mem = mem + np.arange(num_neurons)[:, np.newaxis] * offset
 
-        # Create a secondary y-axis
+        # make membrane potentials look different
+        cmap = matplotlib.colormaps["viridis"]
+        colors = cmap(np.linspace(0, 1, num_neurons))
+
+        # create a secondary y-axis
         secax = axes.twinx()
 
-        # Plot the offset membrane potentials
-        secax.plot(
-            offset_mem.T,
-            c="orange",
-            alpha=0.7,
-            linewidth=1.0
-        )
+        # plot the offset membrane potentials
+        for i in range(num_neurons):
+            secax.plot(
+                offset_mem[i],
+                color = colors[i],
+                alpha = 0.7,
+                linewidth = 1.0,
+                label = f"Neuron {i}" if num_neurons <= 10 else None
+            )
+
+            # Optional reference lines
+            if baseline is not None:
+                secax.axhline(
+                    y = baseline,
+                    color = "blue",
+                    alpha = 0.5,
+                    linestyle = "-",
+                    linewidth = 1
+                )
+            if threshold is not None:
+                secax.axhline(
+                    y = threshold,
+                    color = "red",
+                    alpha = 0.5,
+                    linestyle = "--",
+                    linewidth = 1
+                )
 
         # Set y-limits based on the actual offset range
         buffer = 0.5
@@ -894,9 +951,11 @@ class DataHandler:
         secax.set_ylabel("Neuron Membrane Potential (offset)")
         secax.set_yticks(np.arange(num_neurons) * offset + offset / 2)
         secax.set_yticklabels([f"Neuron {i}" for i in range(num_neurons)])
+        axes.grid(True, alpha = 0.3, axis = "x")
 
-        # Optional: add horizontal lines for threshold/reset if needed
-        # e.g., secax.axhline(y=0.5, color='r', linestyle='--', alpha=0.5)
+        # Optional legend
+        if num_neurons <= 10:
+            secax.legend(loc="upper right", fontsize=8)
 
         return secax
 
@@ -933,8 +992,8 @@ class DataHandler:
         cmap = matplotlib.colormaps["viridis"]
         im = axes.imshow(
             rates,
-            aspect = 'auto',
-            origin = 'lower',
+            aspect = "auto",
+            origin = "lower",
             cmap = cmap,
             # extent = (0, rates.shape[1] * dt, 0, rates.shape[0])
         )
@@ -943,14 +1002,17 @@ class DataHandler:
             im,
             ax = axes if not cax else None,
             cax = cax if cax else None,
-            label = 'Firing rate (Hz)',
+            label = "Firing rate (Hz)",
             location = "bottom"
         )
+        axes.yaxis.set_major_locator(MaxNLocator(
+            nbins = 10,
+            integer = True
+        ))
         axes.set_xlim(0, data["time_steps"])
-        axes.set_title('Instantaneous firing rates')
-        axes.set_xlabel('Time (ms)')
-        if self.ylabel:
-            axes.set_ylabel('Neuron')
+        axes.set_title("Instantaneous firing rates")
+        axes.set_xlabel("Time (ms)")
+        axes.set_ylabel("Neuron")
 
         return axes
 
@@ -997,8 +1059,7 @@ class DataHandler:
         axes.set_yscale("log")
         axes.set_title("Histogram of ISIs")
         axes.set_xlabel("Bins")
-        if self.ylabel:
-            axes.set_ylabel("Counts")
+        axes.set_ylabel("Counts")
 
         return axes
 
@@ -1006,12 +1067,12 @@ class DataHandler:
         self,
         axes: Axes,
         data: dict
-    ) -> Axes:
+    ) -> tuple[Axes, dict]:
         """
         Convenience function to plot the PCA trajectory of the smoothed rates.
+        Includes calculation of effective dimensionality and cumulative variance.
 
         :param axes: Axes to plot the PCA onto.
-        :type axes: plt.Axes
         :param data: A dictionary containing the necessary data. 
                 Required Keys: smoothed_rates
         :type data: dict
@@ -1019,39 +1080,94 @@ class DataHandler:
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        # data shape: [neurons, times_steps]
+        # Shape: [neurons, time_steps]
         X = data["smoothed_rates"].cpu().numpy()
 
-        pca = PCA(n_components = 2)
-        X_pca = pca.fit_transform(X)
+        # Remove linear trend along the time axis (axis 1)
+        X = signal.detrend(X, axis = 1)
 
-        # # Create a label-to-color mapping
-        # labels = np.array([f"Neuron_{i:03d}" for i in range(X.shape[0])])
-        # unique = np.unique(labels)
-        # label_to_idx = {label: idx for idx, label in enumerate(unique)}
-        # cvec = np.array([label_to_idx[label] for label in labels])
+        # PCA to extract population dynamics
+        # We want to visualize how the population state evolves over time - i.e., the "trajectory" of neural activity.
+        # sklearn"s PCA expects data in the format [Samples, Features], where:
+        #   - Samples: individual observations (here, time points)
+        #   - Features: variables measured at each sample (here, neuron activities)
+        #
+        # The original data has shape [Neurons, Time], meaning:
+        #   - Each row = one neuron (feature)
+        #   - Each column = one time point (sample)
+        #
+        # To analyze population dynamics, we need to treat each **time point** as a sample,
+        # and each **neuron** as a feature. This means we must transpose the data:
+        #   X_detrended.T -> shape [Time, Neurons]
+        #
+        # Now:
+        #   - Each row is a time point (sample): the population state at that moment
+        #   - Each column is a neuron (feature): its activity level at that time
+        #
+        # PCA will now find the dominant patterns of co-variation across neurons at each time point.
+        # The principal components (PCs) represent spatial population modes (e.g., global up/down states),
+        # and their scores (projection of data onto PCs) represent how those modes evolve over time.
+        X_T = X.T
+        pca = PCA()
+        pca.fit(X_T)
 
-        # # Use a colormap to assign colors
-        # # this is fucked up
-        # cmap = cm.viridis  # or any other colormap: 'plasma', 'inferno', 'Set1', etc.
-        # norm = plt.Normalize(vmin=0, vmax=len(unique) - 1)
-        # colors = cmap(norm(cvec))
+        # Calculate Metrics
+        # Explained Variance Ratio (Percent)
+        explained_var_ratio = pca.explained_variance_ratio_
 
-        axes.scatter(
-            X_pca[:, 0], 
-            X_pca[:, 1],
-            # c = colors
+        # Cumulative Variance
+        cumulative_var = np.cumsum(explained_var_ratio)
+        n_pc_90 = np.argmax(cumulative_var >= 0.9) + 1
+
+        # Effective Dimensionality (D_eff)
+        # Using the formula: (sum(eigvals))^2 / sum(eigvals^2)
+        eigvals = pca.explained_variance_
+        d_eff = (eigvals.sum()**2) / (eigvals**2).sum()
+
+        stats = {
+            "shape_pca": X_T.shape,
+            "pc1_var": explained_var_ratio[0],
+            "pc2_var": explained_var_ratio[1],
+            "d_eff": d_eff,
+            "n_pc_90": n_pc_90,
+            "centering": True,
+            "detrending": True
+        }
+
+        # Transform for Plotting (Project onto first 2 PCs)
+        # We only need the first 2 components for the 2D plot
+        X_plot = pca.transform(X_T)[:, :2] # Shape: [Time, 2]
+
+        # Create a color map based on time to visualize trajectory direction
+        time_steps = np.arange(X_plot.shape[0])
+        points = axes.scatter(
+            X_plot[:, 0],
+            X_plot[:, 1],
+            c = time_steps,
+            cmap = "viridis",
+            alpha = 0.8,
+            s = 10 # smaller points for lines
+        )
+
+        # Add a line connecting the points to emphasize trajectory
+        axes.plot(
+            X_plot[:, 0],
+            X_plot[:, 1],
+            color = "gray",
+            alpha = 0.3,
+            linewidth = 1
         )
 
         axes.set_title("Neural population trajectory")
-        axes.set_xlabel("PC1 (Explained Var:\n"
-                        f"X:{pca.explained_variance_[0] * 100}%, "
-                        f"Y:{pca.explained_variance_[1] * 100})")
-        if self.ylabel:
-            axes.set_ylabel("PC2")
 
-        return axes
+        # Update labels with correct percentages
+        axes.set_xlabel(f"PC1 ({explained_var_ratio[0]*100:.1f}%)")
+        axes.set_ylabel(f"PC2 ({explained_var_ratio[1]*100:.1f}%)")
 
+        # Add colorbar for time
+        plt.colorbar(points, ax = axes, label = "Time Step")
+        return axes, stats
+ 
     def plot_rsync(
         self,
         save: bool = True,
