@@ -1,4 +1,4 @@
-from imports import MaxNLocator, plt, torch
+from imports import MaxNLocator, argparse, os, pickle, plt, torch
 from imports import numpy as np
 from imports import snntorch as snn
 from imports import spikeplot as splt
@@ -31,9 +31,9 @@ def plot_lif_voltage() -> None:
     # def plot_cur_mem_spk(cur, mem, spk, thr_line=False, vline=False, title=False, ylim_max2=1.25):
     # Generate Plots
     fig, ax = plt.subplots(
-        4, 
-        figsize = (10,8), 
-        sharex = False, 
+        4,
+        figsize = (10,8),
+        sharex = False,
         gridspec_kw = {'height_ratios': [1, 1, 0.4, 0.7]}
     )
 
@@ -113,5 +113,92 @@ def plot_lif_voltage() -> None:
     plt.savefig("./img/lif-neuron.pdf", format = "pdf")
     plt.show()
 
+
+def plot_info_data(
+    path1: str,
+    path2: str,
+    path3: str
+):
+    """
+    Loads pickle files from three different paths and plots the data.
+
+    Each pickle file is expected to be at: <path>/estim/info.pkl
+    The pickle file should contain a tuple[dict, Tensor]: (all_info, centres).
+    all_info should have the key "information"
+
+    :param pathX: Path towards the three data directories
+    :type pathX: str, required
+    """
+
+    paths = [path1, path2, path3]
+    colors = ['b', 'g', 'r']  # Colors for the three plots
+    labels = ['Path 1', 'Path 2', 'Path 3'] # Default labels
+
+    fig, ax = plt.subplots(
+        1,
+        figsize = (10,6),
+    )
+
+    for i, base_path in enumerate(paths):
+        # Construct the full file path
+        file_path = os.path.join(base_path, 'estim', 'info.pkl')
+
+        try:
+            # Load the pickle file
+            with open(file_path, 'rb') as f:
+                all_info, centres = pickle.load(f)
+
+            # Ensure data is on CPU and converted to numpy for plotting
+            # (PyTorch tensors have a .numpy() method, but must be on CPU first)
+            if isinstance(all_info, torch.Tensor):
+                y_vals = all_info.cpu().numpy()
+            else:
+                y_vals = all_info
+
+            if isinstance(centres, torch.Tensor):
+                x_vals = centres.cpu().numpy()
+            else:
+                x_vals = centres
+
+            # because I'm stupid, I have to unpack the mofos in y_vals
+            y_vals = [dic["information"] for dic in y_vals]
+
+            # Plot the data
+            ax.plot(
+                x_vals,
+                y_vals,
+                color = colors[i],
+                label = labels[i],
+                marker = 'o',
+                s = 3,
+                linestyle = '-'
+            )
+
+        except FileNotFoundError:
+            print(f"Error: File not found at {file_path}")
+
+
+    fig.suptitle('Comparison of Information over Surrogate Gradients')
+    ax.set_xlabel('Time (ms)')
+    ax.set_ylabel('Information (Bits)')
+    ax.legend()
+    ax.grid(True)
+    plt.savefig("./img/info-surrogates.pdf", format = "pdf")
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Plot data from three pickle files.")
+
+    # Add arguments for the three paths
+    parser.add_argument('path1', type = str, help = 'Directory path for the first dataset')
+    parser.add_argument('path2', type = str, help = 'Directory path for the second dataset')
+    parser.add_argument('path3', type = str, help = 'Directory path for the third dataset')
+
+    # Parse the arguments
+    args = parser.parse_args()
+    return args
+
 if __name__ == "__main__":
+    args = parse_args()
     plot_lif_voltage()
+
+    plot_info_data(args.path1, args.path2, args.path3)
