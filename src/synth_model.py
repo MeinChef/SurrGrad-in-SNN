@@ -193,10 +193,14 @@ class SynthModel(torch.nn.Module):
             spk = x[step]
 
             # hidden layers
-            for i in range(len(self.layers)):
+            for i in range(len(self.layers) - 1):
                 cur = self.layers[i](spk)
                 spk, mems[i] = self.neurons[i](cur, mems[i])
                 spk = self.filters[i](spk)
+                # TODO: need to not filter last layer i guess?
+            # last layer, because no filtering applied to that
+            cur = self.layers[-1](spk)
+            spk, mems[-1] = self.neurons[-1](cur, mems[-1])
 
             # store output
             if self._return_spk:
@@ -355,6 +359,9 @@ class SynthModel(torch.nn.Module):
         fil = self.filters[layer]               # pyright: ignore[reportAssignmentType]
         fil: PSPFilter
         fil.reset(x.shape[1])
+        if fil == self.filters[-1]:
+            # if it's the last layer, just don't
+            fil = lambda x: x                   # pyright: ignore[reportAssignmentType]
 
 
         # pre-allocate the output-tensor
