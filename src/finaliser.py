@@ -1,5 +1,6 @@
 from data import DataHandler, load_config, load_model
 from imports import argparse, os, pickle, tqdm
+from imports import numpy as np
 from information import InformationEstimator
 from synth_data import DataGenerator
 
@@ -100,6 +101,9 @@ def main(args: argparse.Namespace):
         rec_loss, rec_acc = model.evaluate(
             data = curated
         )
+    print(
+        f"Accuracy during Model Evaluation: {np.mean(rec_acc)*100:.2f}"
+    )
 
     # and visualise
     handler.measure_tendencies(
@@ -108,8 +112,6 @@ def main(args: argparse.Namespace):
     handler.visualise_tendencies(
         name_ext = args.identifier
     )
-    # TODO: visualise information criteria
-    # estim.estimate_with_details()
     print("Success!")
     return True
 

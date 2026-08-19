@@ -29,7 +29,9 @@ import numpy
 
 # high-level stuff
 import torch
+import pandas
 import sklearn
+from scipy import signal
 from sklearn.decomposition import PCA
 
 # snntorch, because it's stupid.
