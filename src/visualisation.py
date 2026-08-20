@@ -1,4 +1,4 @@
-from imports import MaxNLocator, argparse, os, pickle, plt, torch
+from imports import MaxNLocator, Path, argparse, os, pickle, plt, torch
 from imports import numpy as np
 from imports import snntorch as snn
 from imports import spikeplot as splt
@@ -132,11 +132,10 @@ def plot_info_data(
 
     # Define default colors and labels (will be extended if needed)
     default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
-    default_labels = ["Sigmoid","ATan","Triangular", "Spike-Rate-Escape"]
+    labels = [Path(path).name for path in paths]
 
     # Use as many colors and labels as needed
     colors = default_colors[:len(paths)]
-    labels = default_labels
 
     fig, ax = plt.subplots(
         1,
@@ -188,6 +187,80 @@ def plot_info_data(
     ax.grid(True)
     plt.savefig("./img/info-surrogates.pdf", format = "pdf")
 
+
+def plot_info_decoder_loss(
+    *paths: str
+):
+    """
+    Loads pickle files from three different paths and plots the data.
+
+    Each pickle file is expected to be at: <path>/estim/info.pkl
+    The pickle file should contain a tuple[dict, Tensor]: (all_info, centres).
+    all_info should have the key "information"
+
+    :param pathX: Path towards the three data directories
+    :type pathX: str, required
+    """
+    if not paths:
+        raise ValueError("At least one path must be provided.")
+
+    # Define default colors and labels (will be extended if needed)
+    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
+
+    # Use as many colors and labels as needed
+    colors = default_colors[:len(paths)]
+    labels = [Path(path).name for path in paths]
+
+    fig, ax = plt.subplots(
+        1,
+        figsize = (10,6),
+    )
+
+    for i, base_path in enumerate(paths):
+        # Construct the full file path
+        file_path = os.path.join(base_path, "estim", "info.pkl")
+
+        try:
+            # Load the pickle file
+            with open(file_path, "rb") as f:
+                all_info, centres = pickle.load(f)
+
+            # Ensure data is on CPU and converted to numpy for plotting
+            if isinstance(all_info, torch.Tensor):
+                y_vals = all_info.cpu().numpy()
+            else:
+                y_vals = all_info
+
+            if isinstance(centres, torch.Tensor):
+                x_vals = centres.cpu().numpy()
+            else:
+                x_vals = centres
+
+            # because I"m stupid, I have to unpack the mofos in y_vals
+            y_vals = [dic["decoder_accuracy"] for dic in y_vals]
+
+            # Plot the data
+            ax.plot(
+                x_vals,
+                y_vals,
+                color = colors[i],
+                label = labels[i],
+                marker = "o",
+                # s = 2,
+                linestyle = "-"
+            )
+            print(f"MaxVal for data: {np.max(y_vals)}")
+
+        except FileNotFoundError:
+            print(f"Error: File not found at {file_path}")
+
+    fig.suptitle("Comparison of Decoder Accuracy over Time")
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Accuracy")
+    ax.legend()
+    ax.grid(True)
+    plt.savefig("./img/info-acc-surrogates.pdf", format = "pdf")
+
 def plot_loss_data(
     *paths: str,
     plot_loss: bool = True
@@ -209,11 +282,10 @@ def plot_loss_data(
 
     # Define default colors and labels (will be extended if needed)
     default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
-    default_labels = ["Sigmoid","ATan","Triangular", "Spike-Rate-Escape"]
 
     # Use as many colors and labels as needed
     colors = default_colors[:len(paths)]
-    labels = default_labels[:len(paths)]
+    labels = [Path(path).name for path in paths]
 
     fig, ax = plt.subplots(
         1,
@@ -231,6 +303,11 @@ def plot_loss_data(
 
             loss = [np.mean(ep) for ep in loss]
             acc  = [np.mean(ep) for ep in acc]
+            if i == 4:
+                big = np.argmax(loss)
+                loss = loss[:big]
+                acc = acc[:big]
+
             # what to plot
             if plot_loss:
                 data = loss
@@ -249,6 +326,7 @@ def plot_loss_data(
                 # s = 2,
                 linestyle = "-"
             )
+            print(f"MaxVal for {file_path}: {np.max(data)}")
 
 
         except FileNotFoundError:
@@ -260,7 +338,8 @@ def plot_loss_data(
     ax.set_ylabel(y_title)
     ax.legend()
     ax.grid(True)
-    plt.savefig(f"./img/{y_title.lower()[:4]}-surrogates.pdf", format = "pdf")
+    print("Saved")
+    plt.savefig(f"./img/{y_title.lower()[:4]}-surrogates-full.pdf", format = "pdf")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot data from three pickle files.")
@@ -280,7 +359,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    # plot_lif_voltage()
+    plot_lif_voltage()
 
     plot_info_data(*args.paths)
+    plot_info_decoder_loss(*args.paths)
     plot_loss_data(*args.paths, plot_loss = False)
