@@ -6,19 +6,15 @@ class PSPFilter(torch.nn.Module):
     Stateful recursive realization of the SLAYER alpha PSP kernel.
 
     SLAYER kernel:
-
         k(t) = (t / tau) * exp(1 - t / tau)
 
     sampled at:
-
         t = n * Ts
 
     so:
-
         k[n] = (n * Ts / tau) * exp(1 - n * Ts / tau)
 
     The recurrent realization is:
-
         a[n] = exp(-Ts / tau)
 
         q[n] = x[n] + a[n] * q[n-1]
@@ -26,10 +22,6 @@ class PSPFilter(torch.nn.Module):
         r[n] = a[n] * (r[n-1] + q[n-1])
 
         psp[n] = exp(1) * (Ts / tau) * r[n]
-
-    IMPORTANT:
-        States are NOT detached inside forward().
-        This allows gradients to propagate through time.
 
     Detach the states explicitly at BPTT boundaries if truncated
     BPTT is desired.
@@ -72,7 +64,6 @@ class PSPFilter(torch.nn.Module):
         if batch_size is None:
             batch_size = self.q.shape[0]
 
-
         self.q = self.q.new_zeros(
             batch_size,
             self.neurons,
@@ -91,8 +82,7 @@ class PSPFilter(torch.nn.Module):
         self.r = self.r.detach()
 
     def forward(self, spikes):
-        # spikes: [batch, neurons]
-
+        # Spikes: [batch, neurons]
         B, N = spikes.shape
 
         if N != self.neurons:
@@ -103,7 +93,7 @@ class PSPFilter(torch.nn.Module):
         if self.q.shape[0] != B:
             self.reset(B)
 
-        # to keep tau in the range [ts, tau_max]
+        # To keep tau in the range [ts, tau_max]
         tau = self.ts + (
             self.max_tau - self.ts
         ) * torch.sigmoid(self.raw_tau)
@@ -114,9 +104,8 @@ class PSPFilter(torch.nn.Module):
         q_prev = self.q
         r_prev = self.r
 
-        # Update q
+        # Update q and r
         q = spikes + a[None, :] * q_prev
-
         r = a[None, :] * (
             r_prev + q_prev
         )
