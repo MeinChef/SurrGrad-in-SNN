@@ -34,7 +34,7 @@ def plot_lif_voltage() -> None:
         4,
         figsize = (10,8),
         sharex = False,
-        gridspec_kw = {'height_ratios': [1, 1, 0.4, 0.7]}
+        gridspec_kw = {"height_ratios": [1, 1, 0.4, 0.7]}
     )
 
     # Plot input current
@@ -59,10 +59,10 @@ def plot_lif_voltage() -> None:
 
     # Plot output spike using spikeplot
     splt.raster(
-        spk_rec, 
-        ax[2], 
-        s = 400, 
-        c = "black", 
+        spk_rec,
+        ax[2],
+        s = 400,
+        c = "black",
         marker = "|"
     )
     ax[2].sharex(ax[0])
@@ -115,9 +115,7 @@ def plot_lif_voltage() -> None:
 
 
 def plot_info_data(
-    path1: str,
-    path2: str,
-    path3: str
+    *paths: str
 ):
     """
     Loads pickle files from three different paths and plots the data.
@@ -129,10 +127,16 @@ def plot_info_data(
     :param pathX: Path towards the three data directories
     :type pathX: str, required
     """
+    if not paths:
+        raise ValueError("At least one path must be provided.")
 
-    paths = [path1, path2, path3]
-    colors = ['b', 'g', 'r']  # Colors for the three plots
-    labels = ['Path 1', 'Path 2', 'Path 3'] # Default labels
+    # Define default colors and labels (will be extended if needed)
+    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
+    default_labels = ["Sigmoid","ATan","Triangular", "Spike-Rate-Escape"]
+
+    # Use as many colors and labels as needed
+    colors = default_colors[:len(paths)]
+    labels = default_labels
 
     fig, ax = plt.subplots(
         1,
@@ -141,15 +145,14 @@ def plot_info_data(
 
     for i, base_path in enumerate(paths):
         # Construct the full file path
-        file_path = os.path.join(base_path, 'estim', 'info.pkl')
+        file_path = os.path.join(base_path, "estim", "info.pkl")
 
         try:
             # Load the pickle file
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 all_info, centres = pickle.load(f)
 
             # Ensure data is on CPU and converted to numpy for plotting
-            # (PyTorch tensors have a .numpy() method, but must be on CPU first)
             if isinstance(all_info, torch.Tensor):
                 y_vals = all_info.cpu().numpy()
             else:
@@ -160,7 +163,7 @@ def plot_info_data(
             else:
                 x_vals = centres
 
-            # because I'm stupid, I have to unpack the mofos in y_vals
+            # because I"m stupid, I have to unpack the mofos in y_vals
             y_vals = [dic["information"] for dic in y_vals]
 
             # Plot the data
@@ -169,29 +172,107 @@ def plot_info_data(
                 y_vals,
                 color = colors[i],
                 label = labels[i],
-                marker = 'o',
-                s = 3,
-                linestyle = '-'
+                marker = "o",
+                # s = 2,
+                linestyle = "-"
             )
 
         except FileNotFoundError:
             print(f"Error: File not found at {file_path}")
 
 
-    fig.suptitle('Comparison of Information over Surrogate Gradients')
-    ax.set_xlabel('Time (ms)')
-    ax.set_ylabel('Information (Bits)')
+    fig.suptitle("Comparison of Information over Surrogate Gradients")
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Information (Bits)")
     ax.legend()
     ax.grid(True)
     plt.savefig("./img/info-surrogates.pdf", format = "pdf")
+
+def plot_loss_data(
+    *paths: str,
+    plot_loss: bool = True
+):
+    """
+    Loads pickle files from three different paths and plots the data.
+
+    Each pickle file is expected to be at: <path>/bin/test-metrics.pkl
+    The pickle file should contain a tuple[list, list]: (loss, acc).
+    both lists should contain #epochs lists with #batches of entries each.
+
+    :param paths: Path towards the three data directories
+    :type paths: str, required
+    :param plot_loss: Whether to plot the loss or accuracy (Default True)
+    :type plot_loss: bool, optional
+    """
+    if not paths:
+        raise ValueError("At least one path must be provided.")
+
+    # Define default colors and labels (will be extended if needed)
+    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
+    default_labels = ["Sigmoid","ATan","Triangular", "Spike-Rate-Escape"]
+
+    # Use as many colors and labels as needed
+    colors = default_colors[:len(paths)]
+    labels = default_labels[:len(paths)]
+
+    fig, ax = plt.subplots(
+        1,
+        figsize = (10,6),
+    )
+
+    for i, base_path in enumerate(paths):
+        # Construct the full file path
+        file_path = os.path.join(base_path, "bin", "test-metrics.pkl")
+
+        try:
+            # Load the pickle file
+            with open(file_path, "rb") as f:
+                loss, acc = pickle.load(f)
+
+            loss = [np.mean(ep) for ep in loss]
+            acc  = [np.mean(ep) for ep in acc]
+            # what to plot
+            if plot_loss:
+                data = loss
+            else:
+                data = acc
+
+            x_vals = np.arange(len(loss))
+
+            # Plot the loss
+            ax.plot(
+                x_vals,
+                data,
+                color = colors[i],
+                label = labels[i],
+                marker = "o",
+                # s = 2,
+                linestyle = "-"
+            )
+
+
+        except FileNotFoundError:
+            print(f"Error: File not found at {file_path}")
+
+    y_title = "Loss" if plot_loss else "Accuracy"
+    fig.suptitle("Comparison of Accuracy for Surrogate Gradients")
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel(y_title)
+    ax.legend()
+    ax.grid(True)
+    plt.savefig(f"./img/{y_title.lower()[:4]}-surrogates.pdf", format = "pdf")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot data from three pickle files.")
 
     # Add arguments for the three paths
-    parser.add_argument('path1', type = str, help = 'Directory path for the first dataset')
-    parser.add_argument('path2', type = str, help = 'Directory path for the second dataset')
-    parser.add_argument('path3', type = str, help = 'Directory path for the third dataset')
+    parser.add_argument(
+        "paths",
+        type = str,
+        nargs = "+",
+        help = "Directory paths for the data."
+            "Each should contain bin/test-metrics.pkl and estim/info.pkl"
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -199,6 +280,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    plot_lif_voltage()
+    # plot_lif_voltage()
 
-    plot_info_data(args.path1, args.path2, args.path3)
+    plot_info_data(*args.paths)
+    plot_loss_data(*args.paths, plot_loss = False)
