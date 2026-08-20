@@ -43,7 +43,7 @@ def main(args: argparse.Namespace):
 
     # generate tiny dataset
     # get biggest no of batches that fit into info_samples, and add 1 (to be sure)
-    lcm = cfg_model.get("info_samples", 1000) // cfg_model.get("batch_size", 128) + 1
+    lcm = cfg_model.get("info_samples", 2000) // cfg_model.get("batch_size", 128) + 1
     total_samples = lcm * cfg_model.get("batch_size", 128)
 
     print(f"Generating Data ({total_samples} total)...")
@@ -89,6 +89,7 @@ def main(args: argparse.Namespace):
     with open(infofile, "wb+") as file:
         pickle.dump((all_info, centers), file)
 
+    handler.clear_recorded_data()
     handler.enable()
     if args.augment:
         rec_loss, rec_acc = model.augmented_eval(

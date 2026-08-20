@@ -5,10 +5,14 @@ from imports import (
     PCA,
     ROOT,
     Axes,
+    AxesImage,
     Figure,
     Literal,
     MaxNLocator,
     Path,
+    # ScalarMappable,
+    cm,
+    colors,
     functional,
     matplotlib,
     os,
@@ -224,6 +228,9 @@ class DataHandler:
         # recorder: functional.probe.OutputMonitor,
         model: SynthModel,
         time_steps: int = 1000,
+        dt_ms: float = 1.0,
+        rate_tau_ms: float = 20.0,
+        rsync_tau_ms: float = 3.0,
         data_path: str | None = None,
         identifier: str = NOW
     ) -> None:
@@ -261,7 +268,11 @@ class DataHandler:
         )
 
         self.time_steps = time_steps
+        self.dt_ms = dt_ms
+        self.rate_tau_ms = rate_tau_ms
+        self.rsync_tau_ms = rsync_tau_ms
         self._tendencies = {}
+        self.y_title = False
 
         self.recorder.disable()
 
@@ -314,9 +325,11 @@ class DataHandler:
 
         model.eval()
         # new output monitor to make sure we"re  not accidentally deleting data from another one
-        rec = functional.probe.OutputMonitor(model, snn.Leaky)
-        rec.enable()
-        last_layer_key = rec.monitored_layers[-1]
+        # rec = functional.probe.OutputMonitor(model, snn.Leaky)
+        # rec.enable()
+        self.recorder.clear_recorded_data()
+        self.recorder.enable()
+        last_layer_key = self.recorder.monitored_layers[-1]
 
         outputs = []
         labels = []
@@ -333,7 +346,7 @@ class DataHandler:
                 labels.append(label)                    # [batch_size]
 
         # gets list[tuple(t0)[spk, mem], tuple(t1)[spk, mem], ...]
-        recordings = rec[last_layer_key]                # [T*B, B, N]
+        recordings = self.recorder[last_layer_key]                # [T*B, B, N]
         # filters for spikes; list[spk(t0), spk(t1), ...]
         recordings = [x for x, _ in recordings]         # [T*B, B, N]
         # since recordings is now over the whole dataset, it needs splitting
@@ -386,8 +399,8 @@ class DataHandler:
         elif repr == "smoothed":
             rates = self.measure_rate(
                 self.raw_outputs,
-                dt = 1,
-                tau = 5,
+                dt_ms = 1,
+                tau_ms = 5,
             )
             for start in starts:
                 out = rates[
@@ -483,7 +496,7 @@ class DataHandler:
     def measure_isis(
         self,
         spikes: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> list[torch.Tensor]:
         """
         Function to calculate the time-difference between the spikes of each neuron.
         Since not every neuron spikes the same amount of times, the returning tensor is jagged in the second dimension.
@@ -518,14 +531,14 @@ class DataHandler:
             # calculates the "forward difference", so N+1 - N
             isis.append(torch.diff(spk_times[mask]))
 
-        out = torch.nested.nested_tensor(isis, layout = torch.jagged)
-        return out
+        # out = torch.nested.nested_tensor(isis, layout = torch.jagged)
+        return isis
 
     def measure_rate(
         self,
         spikes: torch.Tensor,
-        dt: float = 1.,
-        tau: float = 20.,
+        dt_ms: float = 1.,
+        tau_ms: float = 20.,
     ) -> torch.Tensor:
         """
         Estimate instantaneous firing rate from spike trains using
@@ -534,11 +547,9 @@ class DataHandler:
         :param spikes:  Binary spike tensor of shape [neurons, time_steps].
                     Values should be 0/1 (or spike counts per bin).
         :type spikes: torch.Tensor
-        :param dt: Time step size in seconds.
-                    Example: dt=0.001 for 1 ms bins.
+        :param dt: Time step size in milliseconds.
         :type dt: float
-        :param tau: Exponential kernel time constant in seconds.
-                    Example: tau=0.02 for 20 ms smoothing.
+        :param tau: Exponential kernel time constant in milliseconds.
         :type tau: float
 
         :returns: Smoothed firing rates in Hz.
@@ -546,21 +557,33 @@ class DataHandler:
         :rtype: torch.Tensor
         """
 
+        if dt_ms is None:
+            dt_ms = self.dt_ms
+
+        if tau_ms is None:
+            tau_ms = self.rate_tau_ms
+
+        dt_s = dt_ms / 1000.0
+        tau_s = tau_ms / 1000.0
+
         # kernel length: ~5 tau captures most of exponential decay
-        kernel_length = int(5 * tau / dt)
+        kernel_length = max(
+            1,
+            int(np.ceil(5 * tau_s / dt_s))
+        )
 
         t = torch.arange(
             kernel_length,
             device = spikes.device,
             dtype = spikes.dtype
-        ) * dt
+        ) * dt_s
         t = t.flip(0)
 
         # causal exponential kernel
-        kernel = torch.exp(-t / tau)
+        kernel = torch.exp(-t / tau_s)
 
         # normalize kernel so output is in spikes/sec (Hz)
-        kernel = kernel / kernel.sum() / dt
+        kernel = kernel / kernel.sum() / dt_s
 
         # reshape for conv1d
         kernel = kernel.view(1, 1, -1)
@@ -660,6 +683,7 @@ class DataHandler:
         self,
         save: bool = True,
         name_ext: str | None = None,
+        layer_titles: list = ["Input", "Hidden", "Output"],
         blocking: bool = False
     ) -> None:
         """
@@ -703,15 +727,16 @@ class DataHandler:
         if name_ext is None:
             name_ext = self.id
 
-        FIG_SIZE = (23.4, 16.5) # A2 papersize
+        FIG_SIZE = (18, 15) # A2 papersize
         DPI = 300
-        NROWS = 5
-        HEIGHT_RATIOS = [23,23,1,12,23]
+        NROWS = 4
+        HEIGHT_RATIOS = [1, 1, 0.5, 1.35]
 
         fig = plt.figure(
             num = "tendency-vis",
             clear = True,
             figsize = FIG_SIZE,
+            layout = "constrained",
             dpi = DPI
         )
 
@@ -721,52 +746,197 @@ class DataHandler:
             desc = "Plotting Spike Analysis"
         ):
             measurements = self._tendencies[key]["measurements"]
+            num_layers = len(measurements)
 
             if save and not blocking:
                 axes = fig.subplots(
                     nrows = NROWS,
-                    # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
-                    # (idk about last one, slopmachine suggested that)
-                    ncols = len(measurements),  # layers as cols
-                    squeeze = True,
-                    height_ratios = HEIGHT_RATIOS
+                    ncols = num_layers,  # layers as cols
+                    squeeze = False,
+                    gridspec_kw = {
+                        "height_ratios": HEIGHT_RATIOS,
+                        "hspace": 0.,
+                        "wspace": 0.
+                    }
                 )
             else:
                 fig, axes = plt.subplots(
                     nrows = NROWS,
-                    # raster plot, heatmap of smoothed rates, rsync, pca trajectory of rates? 
-                    # (idk about last one, slopmachine suggested that)
-                    ncols = len(measurements),  # layers as cols
-                    squeeze = True,
+                    ncols = num_layers,  # layers as cols
+                    squeeze = False,
                     figsize = FIG_SIZE,
                     dpi = DPI,
-                    height_ratios = HEIGHT_RATIOS
+                    gridspec_kw = {
+                        "height_ratios": HEIGHT_RATIOS,
+                        "hspace": 0.12,
+                        "wspace": 0.08
+                    }
                 )
 
+            # -------------------------------------------------
+            # Column labels
+            # -------------------------------------------------
+            # make sure layer titles are correct
+            if num_layers != len(layer_titles):
+                layer_titles = [
+                    f"Layer {i}"
+                    for i in range(num_layers)
+                ]
+            # and set them
+            for i, title in enumerate(layer_titles):
+                axes[0, i].set_title(
+                    title,
+                    fontsize = 13,
+                    fontweight = "bold",
+                    pad = 8,
+                )
+
+            # -------------------------------------------------
+            # Shared firing-rate normalization
+            # -------------------------------------------------
+
+            all_rates = np.concatenate([
+                data["smoothed_rates"]
+                    .cpu()
+                    .numpy()
+                    .ravel()
+                for data in measurements.values()
+            ])
+
+            rate_norm = colors.Normalize(
+                vmin = 0,
+                vmax = np.max(all_rates),
+            )
+            # -------------------------------------------------
+            # Shared time normalization
+            # -------------------------------------------------
+            time_norm = colors.Normalize(
+                vmin=0,
+                vmax=self.time_steps * self.dt_ms,
+            )
+
+            # -------------------------------------------------
+            # Plot each layer
+            # -------------------------------------------------
+            images = []
+            pca_points = []
             all_stats = []
-            for i, layer in enumerate(measurements):
-                self._plot_spikes(axes[0, i], measurements[layer])
-                if i == len(measurements) - 1:
-                    self._plot_membrane(axes[0, i], measurements[layer])
-                self._plot_rate_heatmap(
+
+            for i, (layer, data) in enumerate(
+                measurements.items()
+            ):
+                show_ylabel = i == 0
+
+                # plot spikes
+                self._plot_spikes(
+                    axes = axes[0, i],
+                    data = data,
+                    title = layer_titles[i],
+                    show_ylabel = show_ylabel
+                )
+
+                # and membrane if it's the last layer
+                if i == num_layers - 1:
+                    self._plot_membrane(
+                        axes = axes[0, i],
+                        data = data
+                    )
+
+                # then the rate heatmap
+                im = self._plot_rate_heatmap(
                     fig = fig,
                     axes = axes[1, i],
-                    cax = axes[2, i],
-                    data = measurements[layer]
+                    data = data,
+                    show_ylabel = show_ylabel
                 )
-                self._plot_isis(axes[3, i], measurements[layer])
-                _, stats = self._plot_pca_trajectory(axes[4, i], measurements[layer])
+                images.append(im)
+
+                # plot the isi histogram
+                self._plot_isis(
+                    axes = axes[2, i],
+                    data = data,
+                    show_ylabel = show_ylabel
+                )
+
+                # and finally pca plots
+                _, stats = self._plot_pca_trajectory(
+                    axes = axes[3, i],
+                    data = data,
+                    time_norm = time_norm
+                )
 
                 # add layer key to stats and append
                 stats["layer"] = layer
                 all_stats.append(stats)
 
-            df_stats = pd.DataFrame(all_stats)
+            # -------------------------------------------------
+            # Row labels
+            # -------------------------------------------------
 
+            row_titles = [
+                "Spikes",
+                "Instantaneous Firing Rate",
+                "Inter-Spike Interval",
+                "Population Trajectory",
+            ]
+
+            for row, title in enumerate(row_titles):
+                axes[row, 0].annotate(
+                    title,
+                    xy = (-0.15, 0.5),
+                    xycoords = "axes fraction",
+                    rotation = 90,
+                    ha = "center",
+                    va = "center",
+                    fontsize = 11,
+                    fontweight = "bold",
+                )
+
+            # Figure Title
+            cls = self._tendencies[key]["class"].item()
             fig.suptitle(
-                f"Spike Analysis of Class {self._tendencies[key]["class"].item()}"
+                f"Network activity — Class {cls}",
+                fontsize=16,
+                fontweight="bold",
             )
-            fig.tight_layout()
+
+            # -------------------------------------------------
+            # Shared firing-rate colorbar
+            # -------------------------------------------------
+
+            # fig.colorbar(
+            #     images[0],
+            #     ax = axes[1, :],
+            #     location = "bottom",
+            #     orientation = "horizontal",
+            #     label = "Instantaneous firing rate (Hz)",
+            #     fraction = 0.05,
+            #     pad = 0.08,
+            # )
+
+            # -------------------------------------------------
+            # Shared PCA time colorbar
+            # -------------------------------------------------
+
+            sm = cm.ScalarMappable(
+                norm = time_norm,
+                cmap = "viridis",
+            )
+
+            fig.colorbar(
+                sm,
+                ax = axes[3, :],
+                location = "right",
+                label = "Time (ms)",
+                shrink = 0.8,
+                pad = 0
+            )
+
+            # -------------------------------------------------
+            # Save statistics
+            # -------------------------------------------------
+
+            df_stats = pd.DataFrame(all_stats)
 
             if save:
                 # save figure
@@ -775,7 +945,8 @@ class DataHandler:
                         self.img_path,
                         f"tendencies-{name_ext}-{key}.pdf"
                     ),
-                    format = "pdf"
+                    format = "pdf",
+                    bbox_inches = "tight",
                 )
                 fig.clear()
 
@@ -803,10 +974,12 @@ class DataHandler:
 
 
         if save:
-
             # and pickle the measurements
             with open(
-                os.path.join(self.bin_path, f"measurements-{name_ext}.pkl"),
+                os.path.join(
+                    self.bin_path,
+                    f"measurements-{name_ext}.pkl"
+                ),
                 "wb+"
             ) as file:
                 pickle.dump(
@@ -826,7 +999,9 @@ class DataHandler:
     def _plot_spikes(
         self,
         axes: Axes,
-        data: dict
+        data: dict,
+        title: str,
+        show_ylabel: bool = False
     ) -> Axes:
         """
         Convenience function for plotting spikes on an Axis.
@@ -846,31 +1021,59 @@ class DataHandler:
         elif data["neurons"] > 100:
             s = 1
 
-        axes.scatter(
-            *torch.nonzero(
-                data["spikes"].cpu().T,
-                as_tuple = True
-            ),
-            s = s,
-            c = "black",
-            marker = "|"
+        spikes = data["spikes"].detach().cpu().numpy()
+
+        spike_times = [
+            np.flatnonzero(spikes[neuron])
+            for neuron in range(spikes.shape[0])
+        ]
+
+        axes.eventplot(
+            spike_times,
+            orientation = "horizontal",
+            lineoffsets = np.arange(spikes.shape[0]),
+            linelengths = 0.8,
+            linewidths = 0.8 if spikes.shape[0] > 50 else 1.0,
+            colors = "black",
+            rasterized = True,
         )
 
-        # y axis setup
-        # axes.set_yticks(range(data["neurons"]))
+        # axes.scatter(
+        #     *torch.nonzero(
+        #         data["spikes"].cpu().T,
+        #         as_tuple = True
+        #     ),
+        #     s = s,
+        #     c = "black",
+        #     marker = "|"
+        # )
+
+        # y axis tick setup
         axes.yaxis.set_major_locator(MaxNLocator(
-            nbins = 10,
+            nbins = min(10, data["neurons"]),
             integer = True
         ))
         axes.set_ylim(-0.5, data["neurons"] - 0.5)
-
         axes.set_xlim(0, data["time_steps"])
 
         # labels
-        axes.set_title("Spikes - RSync of " + "{:.2f}".format(data["rsync"]))
-        axes.set_ylabel("Neurons")
+        axes.set_title(
+            title,
+            fontsize = 12,
+            fontweight = "bold"
+        )
+        if show_ylabel:
+            axes.set_ylabel("Neurons")
+        else:
+            axes.set_ylabel("")
+
         axes.set_xlabel("Time (ms)")
-        axes.grid(True, alpha = 0.3, axis = "x")
+        axes.grid(
+            True,
+            axis = "x",
+            alpha = 0.2,
+            linewidth = 0.7
+        )
 
         return axes
 
@@ -878,6 +1081,7 @@ class DataHandler:
         self,
         axes: Axes,
         data: dict,
+        offset: float = 1.0,
         threshold: float | None = None,
         baseline: float | None = None
     ) -> Axes:
@@ -893,18 +1097,17 @@ class DataHandler:
         :rtype: plt.Axes
         """
 
-        mem = data["membrane"].cpu().numpy()
-        # ensure mem is float32/float64 and not clipped
-        mem = mem.astype(float)
+        mem = data["membrane"].cpu().numpy().astype(float)
 
         # Define offset: one unit apart (e.g., 1.0) for clarity
-        offset = 1.0
         num_neurons = mem.shape[0]
+
 
         # create offset membrane potentials
         # we'll add an offset per neuron: neuron * offset
         # but we"ll keep the original voltage values intact
-        offset_mem = mem + np.arange(num_neurons)[:, np.newaxis] * offset
+        neuron_offsets = np.arange(num_neurons) * offset
+        offset_mem = mem + neuron_offsets[:, np.newaxis]
 
         # make membrane potentials look different
         cmap = matplotlib.colormaps["viridis"]
@@ -914,31 +1117,32 @@ class DataHandler:
         secax = axes.twinx()
 
         # plot the offset membrane potentials
-        for i in range(num_neurons):
+        for neuron in range(num_neurons):
             secax.plot(
-                offset_mem[i],
-                color = colors[i],
+                np.arange(data["time_steps"]),
+                offset_mem[neuron],
+                color = colors[neuron],
                 alpha = 0.7,
-                linewidth = 1.0,
-                label = f"Neuron {i}" if num_neurons <= 10 else None
+                linewidth = 0.9,
+                label = f"Neuron {neuron}" if num_neurons <= 10 else None
             )
 
             # Optional reference lines
             if baseline is not None:
                 secax.axhline(
-                    y = baseline,
+                    y = baseline + neuron_offsets[neuron],
                     color = "blue",
                     alpha = 0.5,
-                    linestyle = "-",
-                    linewidth = 1
+                    linestyle = ":",
+                    linewidth = 0.7
                 )
             if threshold is not None:
                 secax.axhline(
-                    y = threshold,
+                    y = threshold + neuron_offsets[neuron],
                     color = "red",
                     alpha = 0.5,
                     linestyle = "--",
-                    linewidth = 1
+                    linewidth = 0.7
                 )
 
         # Set y-limits based on the actual offset range
@@ -949,8 +1153,8 @@ class DataHandler:
 
         # Label the y-axis with neuron indices (optional)
         secax.set_ylabel("Neuron Membrane Potential (offset)")
-        secax.set_yticks(np.arange(num_neurons) * offset + offset / 2)
-        secax.set_yticklabels([f"Neuron {i}" for i in range(num_neurons)])
+        secax.set_yticks(neuron_offsets)
+        secax.set_yticklabels([str(i) for i in range(num_neurons)])
         axes.grid(True, alpha = 0.3, axis = "x")
 
         # Optional legend
@@ -965,8 +1169,8 @@ class DataHandler:
         fig: Figure,
         axes: Axes,
         data: dict,
-        cax: Axes | None = None
-    ) -> Axes:
+        show_ylabel: bool = False
+    ) -> AxesImage:
         """
         Convenience function for plotting a heatmap of the instantaneous firing rates.
 
@@ -995,31 +1199,46 @@ class DataHandler:
             aspect = "auto",
             origin = "lower",
             cmap = cmap,
-            # extent = (0, rates.shape[1] * dt, 0, rates.shape[0])
+            extent = (
+                0,
+                data["time_steps"] * self.dt_ms,
+                -0.5,
+                data["neurons"] - 0.5,
+            ),
+            interpolation = "nearest",
+            rasterized = True,
         )
 
         fig.colorbar(
             im,
-            ax = axes if not cax else None,
-            cax = cax if cax else None,
+            ax = axes,
+            orientation = "horizontal",
+            location = "bottom",
+            fraction = 0.04,
+            aspect = 40,
             label = "Firing rate (Hz)",
-            location = "bottom"
+            pad = 0.03,
         )
+
+        if show_ylabel:
+            axes.set_ylabel("Neuron")
+        else:
+            axes.set_ylabel("")
+
         axes.yaxis.set_major_locator(MaxNLocator(
-            nbins = 10,
+            nbins = min(10, data["neurons"]),
             integer = True
         ))
-        axes.set_xlim(0, data["time_steps"])
-        axes.set_title("Instantaneous firing rates")
+        axes.set_xlim(0, data["time_steps"] * self.dt_ms)
         axes.set_xlabel("Time (ms)")
-        axes.set_ylabel("Neuron")
 
-        return axes
+        return im
 
     def _plot_isis(
         self,
         axes: Axes,
-        data: dict
+        data: dict,
+        show_ylabel: bool = False
     ) -> Axes:
         """
         Convenience function for plotting a histogram of ISIs onto a given Axes.
@@ -1035,38 +1254,79 @@ class DataHandler:
         :rtype: plt.Axes
         """
 
-        data_clean = torch.nested.to_padded_tensor(
-            data["isis"],
-            padding = 0
-        ).to(torch.float)
+        isis = [
+            x.cpu().numpy()
+            for x in data["isis"]
+            if x.numel() > 0
+        ]
 
-        if data_clean.numel() == 0:
+        if not isis:
+            axes.text(
+                0.5,
+                0.5,
+                "No ISIs",
+                ha="center",
+                va="center",
+                transform=axes.transAxes,
+            )
             return axes
-            data_clean = torch.tensor([0], dtype = torch.float)
 
+        values = np.concatenate(isis)
 
-        data_hist = torch.histc(
-            input = data_clean,
-            bins = 100,
-            min = 1,
-            max = max(2, data_clean.amax().item())
-        ).numpy()
+        # Remove invalid/non-positive values.
+        values = values[
+            np.isfinite(values) &
+            (values >= 0)
+        ]
 
-        axes.stairs(
-            values = data_hist,
-            fill = True
+        if values.size == 0:
+            return axes
+
+        # Use sensible bin width while keeping the number of bins manageable.
+        # Explicitly include zero.
+        if values.max() == 0:
+            bins = np.array([
+                -0.5 * self.dt_ms,
+                0.5 * self.dt_ms,
+            ])
+        else:
+            n_bins = min(
+                50,
+                max(10, int(np.sqrt(values.size)))
+            )
+
+            bins = np.linspace(
+                0,
+                values.max(),
+                n_bins + 1,
+            )
+
+            # Make sure zero has its own visible bin.
+            bins[0] = -0.5 * self.dt_ms
+
+        # and plot
+        axes.hist(
+            values,
+            bins = bins,                # type:ignore
+            color = "tab:blue",
+            alpha = 0.85,
+            edgecolor = "none",
         )
+
         axes.set_yscale("log")
-        axes.set_title("Histogram of ISIs")
-        axes.set_xlabel("Bins")
-        axes.set_ylabel("Counts")
+        axes.set_xlabel("Inter-Spike Interval (ms)")
+        if show_ylabel:
+            axes.set_ylabel("Count")
+        else:
+            axes.set_ylabel("")
 
         return axes
 
     def _plot_pca_trajectory(
         self,
         axes: Axes,
-        data: dict
+        data: dict,
+        time_norm: colors.Normalize | None = None,
     ) -> tuple[Axes, dict]:
         """
         Convenience function to plot the PCA trajectory of the smoothed rates.
@@ -1109,7 +1369,7 @@ class DataHandler:
         # and their scores (projection of data onto PCs) represent how those modes evolve over time.
         X_T = X.T
         pca = PCA()
-        pca.fit(X_T)
+        X_plot = pca.fit_transform(X_T)
 
         # Calculate Metrics
         # Explained Variance Ratio (Percent)
@@ -1117,7 +1377,11 @@ class DataHandler:
 
         # Cumulative Variance
         cumulative_var = np.cumsum(explained_var_ratio)
-        n_pc_90 = np.argmax(cumulative_var >= 0.9) + 1
+        n_pc_90 = (
+            np.argmax(cumulative_var >= 0.9) + 1
+            if np.any(cumulative_var >= 0.9)
+            else len(cumulative_var)
+        )
 
         # Effective Dimensionality (D_eff)
         # Using the formula: (sum(eigvals))^2 / sum(eigvals^2)
@@ -1133,20 +1397,25 @@ class DataHandler:
             "centering": True,
             "detrending": True
         }
+        time = (
+            np.arange(X_plot.shape[0]) *
+            self.dt_ms
+        )
 
-        # Transform for Plotting (Project onto first 2 PCs)
-        # We only need the first 2 components for the 2D plot
-        X_plot = pca.transform(X_T)[:, :2] # Shape: [Time, 2]
+        if time_norm is None:
+            time_norm = colors.Normalize(
+                vmin = time.min(),
+                vmax = time.max(),
+            )
 
         # Create a color map based on time to visualize trajectory direction
-        time_steps = np.arange(X_plot.shape[0])
         points = axes.scatter(
             X_plot[:, 0],
             X_plot[:, 1],
-            c = time_steps,
+            c = time,
             cmap = "viridis",
             alpha = 0.8,
-            s = 10 # smaller points for lines
+            s = 5 # smaller points for lines
         )
 
         # Add a line connecting the points to emphasize trajectory
@@ -1155,17 +1424,40 @@ class DataHandler:
             X_plot[:, 1],
             color = "gray",
             alpha = 0.3,
-            linewidth = 1
+            linewidth = 0.7,
+            zorder = 0
         )
 
-        axes.set_title("Neural population trajectory")
+        # Explicit start/end markers.
+        axes.scatter(
+            X_plot[0, 0],
+            X_plot[0, 1],
+            s = 40,
+            facecolor = "white",
+            edgecolor = "black",
+            linewidth = 1,
+            zorder = 5,
+            label = "Start",
+        )
 
-        # Update labels with correct percentages
+        axes.scatter(
+            X_plot[-1, 0],
+            X_plot[-1, 1],
+            s = 100,
+            marker = "X",
+            facecolor = "black",
+            edgecolor = "white",
+            linewidth = 0.5,
+            zorder = 5,
+            label = "End",
+        )
+
+        # labels with explained var percentages
         axes.set_xlabel(f"PC1 ({explained_var_ratio[0]*100:.1f}%)")
         axes.set_ylabel(f"PC2 ({explained_var_ratio[1]*100:.1f}%)")
+        axes.legend()
 
         # Add colorbar for time
-        plt.colorbar(points, ax = axes, label = "Time Step")
         return axes, stats
  
     def plot_rsync(
@@ -1210,6 +1502,7 @@ class DataHandler:
             num = "rsync",
             figsize = (2.5 * unique_classes.size, 5),
             dpi = 300,
+            layout = "constrained",
             clear = True
         )
         axes = fig.subplot_mosaic(
@@ -1217,21 +1510,25 @@ class DataHandler:
                 [f"class{i}" for i in unique_classes],
                 ["legend"    for _ in unique_classes]
             ],
+            # squeeze = False,
             width_ratios = [1 for _ in unique_classes],
-            height_ratios = (13,1)
+            height_ratios = (1,0.01),
         )
 
-        vmin = rsyncs.min()
-        vmax = rsyncs.max()
+
+        norm = colors.Normalize(
+            vmin = rsyncs.min(),
+            vmax = rsyncs.max(),
+        )
+        cmap = matplotlib.colormaps["viridis"]
 
         for c in unique_classes:
             axes[f"class{c}"] = sns.heatmap(
                 rsyncs[cls == c],
-                annot = True,
-                cmap = "viridis",
-                vmin = vmin,
-                vmax = vmax,
                 ax = axes[f"class{c}"],
+                norm = norm,
+                cmap = cmap,
+                annot = True,
                 cbar = True,
                 cbar_ax = axes["legend"],
                 cbar_kws = {"location": "bottom"}
@@ -1240,8 +1537,11 @@ class DataHandler:
             axes[f"class{c}"].set_xlabel("Layers")
             axes[f"class{c}"].set_ylabel("Samples")
 
-        fig.tight_layout()
-        fig.suptitle("RSync per Class and Layer")
+        fig.suptitle(
+            "Population synchrony across samples",
+            fontsize=14,
+            fontweight="bold",
+        )
 
         if save:
             fig.savefig(
@@ -1249,9 +1549,10 @@ class DataHandler:
                     self.img_path,
                     f"rsyncs-{name_ext}.pdf"
                 ),
-                format = "pdf"
+                format = "pdf",
+                bbox_inches = "tight",
             )
-            fig.clear()
+            plt.close(fig)
 
         return fig
 

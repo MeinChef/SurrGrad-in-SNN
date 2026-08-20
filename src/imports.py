@@ -19,6 +19,7 @@ from typing import Literal, Any
 from collections.abc import Callable, Sequence
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.image import AxesImage
 
 # file handling
 import yaml
@@ -45,6 +46,8 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
+# from matplotlib.cm import ScalarMappable
+from matplotlib import cm
 import seaborn
 from snntorch import spikeplot
 
