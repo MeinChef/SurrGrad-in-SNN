@@ -62,44 +62,21 @@ def main(args: argparse.Namespace):
         prefetch    = cfg_data.get("prefetch", 1),
     )[0]
 
-    # prep data for estimator
-    _, labels = handler.get_network_response(model, train)
-    centers, responses = handler.get_output_repr("count", step = 10) # TODO:CHANGE HERE
-
     print("Done!")
 
-    # fit the estimator on all data-windows
-    all_info = []
-    for window_idx, ctr in tqdm.tqdm(
-        enumerate(centers),
-        total = len(centers),
-        desc = "Training Decoder Windows"
-    ):
-        resp = responses[:, window_idx, :]
-        estim.fit(
-            resp, labels
-        )
-        info = estim.estimate_with_details()
-        # save each estimator
-        estim.save(args.data_path, f"{window_idx}.pt")
-        all_info.append(info)
-
-    # and the outputs to a separate file
-    infofile = os.path.join(args.data_path, "estim", "info.pkl")
-    with open(infofile, "wb+") as file:
-        pickle.dump((all_info, centers), file)
-
-    handler.clear_recorded_data()
+    # ------------------------------
+    # Visualisations
+    # ------------------------------
     handler.enable()
     if args.augment:
-        rec_loss, rec_acc = model.augmented_eval(
+        _rec_loss, rec_acc = model.augmented_eval(
             data = curated,
             augment = args.augment,
             jitter = cfg_model.get("jitter", 30),
             only_nth_layer = cfg_model.get("augmented_layer", 1)
         )
     else:
-        rec_loss, rec_acc = model.evaluate(
+        _rec_loss, rec_acc = model.evaluate(
             data = curated
         )
     print(
@@ -113,6 +90,42 @@ def main(args: argparse.Namespace):
     handler.visualise_tendencies(
         name_ext = args.identifier
     )
+
+    # ------------------------------
+    # Information
+    # ------------------------------
+    # get data for the estimator
+    _, labels = handler.get_network_response(model, train, layer = args.layer)
+
+    for window in [8,16,32,64,128]:
+        centers, responses = handler.get_output_repr(
+            "count",
+            window_width = window,
+            step = window // 2
+        )
+        # fit the estimator on all data-windows
+        all_info = []
+        for window_idx, ctr in tqdm.tqdm(
+            enumerate(centers),
+            total = len(centers),
+            desc = f"Training Decoder Windows ({window})"
+        ):
+            resp = responses[:, window_idx, :]
+            estim.fit(
+                resp, labels
+            )
+            info = estim.estimate_with_details()
+            # save each estimator
+            estim.save(args.data_path, f"{args.layer}-{window}-{window_idx}.pt")
+            all_info.append(info)
+
+        # and the outputs to a separate file
+        infofile = os.path.join(args.data_path, "estim", f"filtered-info-{args.layer}-{window}.pkl")
+        with open(infofile, "wb+") as file:
+            pickle.dump((all_info, centers), file)
+
+    handler.clear_recorded_data()
+
     print("Success!")
     return True
 
@@ -131,6 +144,14 @@ def resolve_arguments() -> argparse.Namespace:
         required = False,
         default = None,
         help = "Path to the data directory. Defaults to ./data/<identifier>"
+    )
+    parser.add_argument(
+        "--layer",
+        "-l",
+        type = int,
+        required = False,
+        default = 2,
+        help = "Which layer the estimation decoder is supposed to be trained on."
     )
     parser.add_argument(
         "--augment",
