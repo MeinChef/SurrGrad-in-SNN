@@ -1,5 +1,5 @@
 from imports import NOW, ROOT, Callable, Path, functional, os, surrogate, torch, warnings
-from loss import FirstSpikeLoss, MeanCELoss, SpikemaxLoss
+from loss import MeanCELoss
 from surrogate import stable_sigmoid
 
 
@@ -16,7 +16,7 @@ def check_working_directory() -> bool:
         if "SurrGrad-in-SNN" in os.listdir():
             try:
                 os.chdir(os.path.join(os.getcwd(), "SurrGrad-in-SNN"))
-            except Exception as e:
+            except (FileNotFoundError, NotADirectoryError, PermissionError) as e:
                 print(e)
                 raise LookupError("Could not find the folder SurrGrad-in-SNN in your current working directory. "
                                   "Consider changing the working directory")
@@ -109,17 +109,11 @@ def resolve_loss(config: dict) -> Callable:
         return torch.nn.MSELoss(
             reduction = config["reduction"]
         )
-    elif name == "ttfs":
-        return FirstSpikeLoss(
-            alpha = config["alpha"],
-        )
     elif name == "mean_ce":
         return MeanCELoss(
             intermediate_reduction = config["intermediate_reduction"],
             reduction = config["reduction"]
         )
-    elif name == "spikemax":
-        return SpikemaxLoss()
     else:
         raise NameError("The loss function specified in config is unresolveable. Check source code and typos")
 
