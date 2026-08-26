@@ -1,0 +1,104 @@
+data:
+  neurons: &neurons
+    val: 10
+  time_steps: &time_steps
+    val: 1000
+  no_samples: 100000
+  shuffle_spikes: 0.0
+  min_isi: 1
+  max_isi: 50
+  min_rate: 2
+  max_rate: 10
+  only_even: True
+
+  batch_size: 512
+  shuffle: True
+  train_split: 0.7
+  prefetch: 16
+
+model:
+  features: *neurons
+  time_steps: *time_steps
+  ts: 1
+
+  neurons: [100, 2]
+  neuron_reset: "zero" # "subtract", "zero", or "none"
+  neuron_tau: 5
+  neuron_learn_beta: True
+
+  filter_tau: 10
+  filter_learn_tau: True
+
+  return_spk: False
+
+  # hyperparameters
+  loss:
+    # loss functions taken from snntorch
+    # available losses: 
+      # ce_temporal: [arg: invers]
+      # ce_max_membrane: [arg: none]
+      # ce_rate: [arg: none]
+      # ce_count: [arg: none]
+      # mse_temporal: [arg: tolerance, on_target, off_target]
+      # mse_rate: [arg: correct_rate, incorrect_rate]
+      # mse_membrane: [arg: on_target, off_target]
+      # ttfs: [arg: alpha]
+      # mean_ce: [arg: intermediate_reduction]
+    type: "mse_membrane" # mean over time, then CE loss
+    correct_rate: 0.5
+    incorrect_rate: 0
+    inverse: "negate" # either reciprocal or negate, default: negate
+    tolerance: 50
+    off_target: 0
+    on_target: 1.5
+    # String: "mean", "sum", "none"
+    reduction: "mean"
+    intermediate_reduction: "mean"
+    alpha: 0.001
+
+    population: &population
+      is_pop: False
+      num_classes: 2
+
+  accuracy:
+    # available accuracies: rate, temporal
+    type: "rate"
+    population: *population
+
+  optimiser:
+    # available optimisers: adam
+    type: "adam"
+    learning_rate: 0.002
+    betas: [0.9, 0.999]
+    weight_decay: 0.0001
+
+  surrogate:
+    # available in snntorch: 
+    # atan [arg: alpha]
+    # fast_sigmoid [arg: slope]
+    # heavside [arg: None]
+    # sigmoid [arg: slope] # produces nans in gradients for float over/underflow reasons
+    # spike_rate_escape [args: beta, slope]
+    # straight_through [arg: None]
+    # triangular [arg: threshold]
+    type: "spike_rate_escape"
+    alpha: null
+    beta: 1
+    slope: 100
+    threshold: null
+
+  # training parameters
+  epochs: 200
+  # partial training/testing in minibatches
+  partial_training: -1
+  partial_testing: -1
+  patience: 10
+
+  # record hidden layers?
+  samples: 20
+  info_sampes: 2000
+
+  # fancy stuff (augmenting the forward pass within the model)
+  move_fraction: 0.0
+  jitter: 0
+  augmented_layer: 0
