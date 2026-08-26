@@ -357,7 +357,7 @@ def plot_loss_data(
     )
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Plot data from three pickle files.")
+    parser = argparse.ArgumentParser(description="Plot data from pickle files.")
 
     # Add arguments for the three paths
     parser.add_argument(
