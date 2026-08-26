@@ -1,6 +1,4 @@
-from imports import NOW, ROOT, TORCH_RNG, Callable, Path, functional, os, surrogate, torch, warnings
-from imports import numpy as np
-from imports import snntorch as snn
+from imports import NOW, ROOT, Callable, Path, functional, os, surrogate, torch, warnings
 from loss import FirstSpikeLoss, MeanCELoss, SpikemaxLoss
 from surrogate import stable_sigmoid
 
@@ -200,70 +198,3 @@ def create_datapath(
         ))
 
     return new_path
-
-def get_network_response(
-    model,
-    data: torch.utils.data.DataLoader,
-    # split: list[float] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Extracts network responses from a trained model and splits the resulting dataset
-    into train/validation/test subsets according to the specified split ratios.
-
-    This function runs the model on the provided data loader in evaluation mode,
-    records the spike outputs from the final layer of the network (assuming a spiking
-    neural network), and constructs a tensor dataset of (spike activations, labels).
-    The dataset is then randomly split using `torch.utils.data.random_split`.
-
-    The split ratios must sum to 1.0. If no split is provided, defaults to [0.7, 0.15, 0.15].
-
-    :param model: The trained model (e.g., SynthModel) to probe.
-    :type model: SynthModel
-    :param data: DataLoader providing batches of input data (x, label).
-    :type data: torch.utils.data.DataLoader
-    :param split: List of fractions for train/validation/test splits. Must sum to 1.0.
-                  Default is [0.7, 0.15, 0.15].
-    :type split: list[float] | None
-    :return: A list of torch.utils.data.Subset objects corresponding to the split
-             datasets (train, val, test).
-    :rtype: list[torch.utils.data.Subset]
-    :raises AssertionError: If the sum of split fractions is not approximately 1.0.
-    :raises ValueError: If the data loader is empty or the model produces no output.
-    """
-
-    model.eval()
-    rec = functional.probe.OutputMonitor(model, snn.Leaky)
-    rec.enable()
-    last_layer_key = rec.monitored_layers[-1]
-
-    outputs = []
-    labels = []
-    time_steps = 0
-    with torch.no_grad():
-        for x, label in data: # add tqdm
-            time_steps = x.shape[0]
-            model(x, batch_first = False)
-            labels.append(label)                    # [batch_size]
-
-    # gets list[tuple(t0)[spk, mem], tuple(t1)[spk, mem], ...]
-    recordings = rec[last_layer_key]                # [T*B, N]
-    # filters for spikes; list[spk(t0), spk(t1), ...]
-    recordings = [x for x, _ in recordings]         # [T*B, N]
-    # since recordings is now over the whole dataset, it needs splitting
-    # each sample should have only time_steps time steps
-    # the whole recordings list should be no_batches * time_steps
-    assert len(recordings) == len(data) * time_steps
-    chunks = []
-    for n in range(len(data)):
-        chunk = recordings[
-            n * time_steps : (n+1) * time_steps     # [T, N]
-        ]
-        chunks.append(torch.stack(chunk))
-    # chunks should be now [len(data)] with items of [T, B, N]
-
-    # make them to giant tensors
-    outputs = torch.cat(chunks, dim = 1)            # [T, all_samples, N]
-    outputs = outputs.permute(1, 0, -1)             # [all_samples, T, N]
-    labels  = torch.cat(labels)                     # [all_samples]
-
-    return outputs, labels
