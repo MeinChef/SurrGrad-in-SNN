@@ -1,4 +1,4 @@
-from imports import DEVICE, TORCH_RNG, torch, tqdm, os
+from imports import DEVICE, TORCH_RNG, os, torch
 
 
 class InformationDecoder(torch.nn.Module):
