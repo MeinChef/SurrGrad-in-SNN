@@ -1,23 +1,125 @@
-# SurrGrad-in-SNN
-Analysing learning rules of SNNs
+## Overview
 
-## NMNIST
-For performance reference:
+Spiking Neural Networks (SNNs) are a biologically‑inspired alternative to conventional artificial neural networks. Their event‑driven dynamics make them attractive for low‑power neuromorphic hardware, but the non‑differentiable spike function prevents direct use of back‑propagation.
 
-No optimisation, single threaded: 90s for dataprep, 1 epoch, 50 iterations; GPU between 0 and 20%
+**SurrGrad‑in‑SNN** implements *surrogate‑gradient* (SurrGrad) training for SNNs from the ground up, using only standard scientific Python packages. The codebase is intentionally small and framework‑agnostic, making it easy to read, modify, and extend for research, teaching, or rapid prototyping.
 
-5 worker, prefetch: 36s, GPU at ~30%
+---
 
-5 worker, 20 prefetch: 35s, GPU at ~40%, measurement error
+## Setup
 
-### How to use
-- Make sure the working directory of the python venv is in fact the top folder of the git repository.
+### Prerequisites
 
-### Next TODO
-- During testing, I have encountered only class 0 and 1. Investigate data and data preparation thuroughly. - Solved, faulty cache directory.
-- When training on temporal data, the loss is around 0.9 from the get-go
-    - For mse, the loss is 0.9935 for _every single datapoint_
-    - For ce the loss is about 2.3036 for _every single datapoint_
-- During training on the rate data, loss decreases to ~8 until like batch 27, and then jumps to ~38 and stays exactly there
-- Visualize what the network is doing
-- check if tonic (need numpy version <2.0 is actually working with numpy 2.4.4)
+* Python 3.14 or greater
+* `pip`
+
+### Steps
+
+```bash
+# 1 Clone the repository
+git clone https://github.com/MeinChef/SurrGrad-in-SNN.git
+cd SurrGrad-in-SNN
+
+# 2 (Optional) Create a virtual environment
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+
+# 3 Install required packages
+pip install -r requirements.txt
+```
+
+### Quick-Start Example
+
+- Edit config.yml to your liking
+- Execute `python3 src/synth_main.py [flags]`
+- And `python3 src/finaliser.py [flags]` to clean up and do some visualisations.
+
+---
+
+## Repository Structure  
+
+```
+SurrGrad-in-SNN/
+│
+├─ src/                     # Core library
+│   ├─ imports.py           # Centralised imports & global constants
+│   ├─ misc.py              # Helper utilities (path creation, resolving cleartext to functions, etc.)
+│   ├─ data.py              # NMNIST loader & generic data utilities
+│   ├─ synth_data.py        # Synthetic rate‑coded / temporal data generator
+│   ├─ synth_model.py       # Model definition (LIF layers, PSP filters, etc.)
+│   ├─ synth_main.py        # End‑to‑end training script for the synthetic task
+│   ├─ surrogate.py         # Logistic Sigmoid surrogate‑gradient function
+│   ├─ loss.py              # Loss functions (CE, MSE, First‑Spike, Spikemax, …)
+│   ├─ pspfilter.py         # Alpha‑kernel post‑synaptic potential filter
+│   ├─ information.py       # Decoder‑based information estimator (Heller et al.)
+│   ├─ tracker.py           # Simple logger for loss / accuracy over epochs
+│   ├─ visualisation.py     # Matplotlib helpers for raster plots, membrane traces, etc.
+│   └─ finaliser.py         # Model checkpointing & export utilities
+│
+├─ img/                     # Example figures (optional)
+│
+├─ config.yml               # Default hyper‑parameter configuration
+├─ requirements.txt         # Python dependencies
+├─ LICENSE                  # MIT License
+└─ README.md
+```
+
+---
+
+## Flags of important files
+
+### `src/synth_main.py`
+```bash
+usage: synth_main.py [-h] [--cfg-path CFG_PATH] [--record-hidden] [--save-model] [--augment {jitter,shuffle}] [--save-path SAVE_PATH] [--identifier IDENTIFIER]
+
+options:
+  -h, --help            show this help message and exit
+  --cfg-path, -c CFG_PATH
+                        Path to the config directory. Defaults to ./config.yml
+  --record-hidden, -r   Flag whether to record the hidden layers and save them
+  --save-model, -s      Flag whether to save the model checkpoints
+  --augment, -a {jitter,shuffle}
+                        Defines how to augment the forward pass of the model when recording. Options: 'jitter', 'shuffle'. Default: None
+  --save-path, -p SAVE_PATH
+                        Path for the visualisations / models / outputs to be saved.
+  --identifier, -i IDENTIFIER
+                        Default Filename for visualisations / models / outputs.
+```
+
+### `src/finaliser.py`
+```bash
+usage: finaliser.py [-h] [--data-path DATA_PATH] [--layer LAYER] [--augment {jitter,shuffle}] identifier
+
+positional arguments:
+  identifier            A unique identifier for searching a folder in the data-path. Will be also used to find models/visualisations/etc
+
+options:
+  -h, --help            show this help message and exit
+  --data-path, -p DATA_PATH
+                        Path to the data directory. Defaults to ./data/<identifier>
+  --layer, -l LAYER     Which layer the estimation decoder is supposed to be trained on.
+  --augment, -a {jitter,shuffle}
+                        Defines how to augment the forward pass of the model when recording. Options: 'jitter', 'shuffle'. Default: None
+```
+
+### `src/visualisation.py`
+```bash
+usage: visualisation.py [-h] [--layer LAYER] [--window WINDOW] [--plot-loss] paths [paths ...]
+
+Plot data from pickle files.
+
+positional arguments:
+  paths                Directory paths for the data.Each should contain bin/test-metrics.pkl and estim/info.pkl
+
+options:
+  -h, --help           show this help message and exit
+  --layer, -l LAYER    Layer index for information plots (default: 1)
+  --window, -w WINDOW  Window size for information analysis (default: 32).
+  --plot-loss          Plot loss instead of accuracy (default: plot accuracy).
+```
+
+
+---
+
+## Declaration of AI use
+This README was partially generated by LLMs, and their output has been copied verbatim to this file.
