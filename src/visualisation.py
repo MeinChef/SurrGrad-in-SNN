@@ -1,4 +1,4 @@
-from imports import MaxNLocator, Path, argparse, os, pickle, plt, torch
+from imports import MaxNLocator, Path, argparse, matplotlib, os, pickle, plt, torch
 from imports import numpy as np
 from imports import snntorch as snn
 from imports import spikeplot as splt
@@ -32,7 +32,7 @@ def plot_lif_voltage() -> None:
     # Generate Plots
     fig, ax = plt.subplots(
         4,
-        figsize = (10,8),
+        figsize = (5,4),
         sharex = False,
         gridspec_kw = {"height_ratios": [1, 1, 0.4, 0.7]}
     )
@@ -47,7 +47,7 @@ def plot_lif_voltage() -> None:
     # Plot membrane potential
     ax[1].plot(mem_rec)
     ax[1].set_ylim([0, 1.3]) 
-    ax[1].set_ylabel("Membrane Potential ($U_{mem}$)")
+    ax[1].set_ylabel("Membrane Potential ($V_{mem}$)")
     ax[1].axhline(
         y = 1, 
         alpha = 0.25, 
@@ -110,12 +110,15 @@ def plot_lif_voltage() -> None:
     )
 
     fig.tight_layout()
-    plt.savefig("./img/lif-neuron.pdf", format = "pdf")
+    plt.savefig("./img/lif-neuron.pdf", format = "pdf",
+        bbox_inches = "tight")
     plt.show()
 
-
+# the following three functions are partially taken verbatim from LLMS
 def plot_info_data(
-    *paths: str
+    *paths: str,
+    layer: int = 1,
+    window: int = 64
 ):
     """
     Loads pickle files from three different paths and plots the data.
@@ -130,25 +133,41 @@ def plot_info_data(
     if not paths:
         raise ValueError("At least one path must be provided.")
 
-    # Define default colors and labels (will be extended if needed)
-    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
-    labels = [Path(path).name for path in paths]
+    windows = [8,16,32,64,128]
+    if len(paths) == 1:
+        filepaths = [
+            os.path.join(paths[0], "estim", f"info-{layer}-{window}.pkl")
+            for window in windows
+        ]
+        labels = [str(window) for window in windows]
+        ext = "Windows"
+
+    else:
+        filepaths = [
+            os.path.join(
+                base_path, "estim", f"info-{layer}-{window}.pkl"
+            ) 
+            for base_path in paths
+        ]
+        # Define default colors and labels (will be extended if needed)
+        labels = [Path(path).name for path in paths]
+        ext = "Surrogate Gradients"
 
     # Use as many colors and labels as needed
-    colors = default_colors[:len(paths)]
+    cmap = matplotlib.colormaps["tab10"]
+    colors = cmap(np.linspace(0, 1 ,len(filepaths)))
 
     fig, ax = plt.subplots(
         1,
-        figsize = (10,6),
+        figsize = (7,4.5),
     )
 
-    for i, base_path in enumerate(paths):
+    for i, path in enumerate(filepaths):
         # Construct the full file path
-        file_path = os.path.join(base_path, "estim", "info.pkl")
 
         try:
             # Load the pickle file
-            with open(file_path, "rb") as f:
+            with open(path, "rb") as f:
                 all_info, centres = pickle.load(f)
 
             # Ensure data is on CPU and converted to numpy for plotting
@@ -171,13 +190,11 @@ def plot_info_data(
                 y_vals,
                 color = colors[i],
                 label = labels[i],
-                marker = "o",
-                # s = 2,
                 linestyle = "-"
             )
 
         except FileNotFoundError:
-            print(f"Error: File not found at {file_path}")
+            print(f"Error: File not found at {path}")
 
 
     fig.suptitle("Comparison of Information over Surrogate Gradients")
@@ -185,7 +202,8 @@ def plot_info_data(
     ax.set_ylabel("Information (Bits)")
     ax.legend()
     ax.grid(True)
-    plt.savefig("./img/info-surrogates.pdf", format = "pdf")
+    plt.savefig(f"./img/info-{layer}-{ext.lower().split()[0]}.pdf", format = "pdf",
+        bbox_inches = "tight")
 
 
 def plot_info_decoder_loss(
@@ -205,20 +223,21 @@ def plot_info_decoder_loss(
         raise ValueError("At least one path must be provided.")
 
     # Define default colors and labels (will be extended if needed)
-    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
+    cmap = matplotlib.colormaps["tab10"]
+    colors = cmap(np.linspace(0, 1 ,len(paths)))
 
     # Use as many colors and labels as needed
-    colors = default_colors[:len(paths)]
+
     labels = [Path(path).name for path in paths]
 
     fig, ax = plt.subplots(
         1,
-        figsize = (10,6),
+        figsize = (7,4.5),
     )
 
     for i, base_path in enumerate(paths):
         # Construct the full file path
-        file_path = os.path.join(base_path, "estim", "info.pkl")
+        file_path = os.path.join(base_path, "estim", "info-1-32.pkl")
 
         try:
             # Load the pickle file
@@ -245,8 +264,6 @@ def plot_info_decoder_loss(
                 y_vals,
                 color = colors[i],
                 label = labels[i],
-                marker = "o",
-                # s = 2,
                 linestyle = "-"
             )
             print(f"MaxVal for data: {np.max(y_vals)}")
@@ -259,7 +276,8 @@ def plot_info_decoder_loss(
     ax.set_ylabel("Accuracy")
     ax.legend()
     ax.grid(True)
-    plt.savefig("./img/info-acc-surrogates.pdf", format = "pdf")
+    plt.savefig("./img/info-acc-surrogates.pdf", format = "pdf",
+        bbox_inches = "tight")
 
 def plot_loss_data(
     *paths: str,
@@ -280,16 +298,16 @@ def plot_loss_data(
     if not paths:
         raise ValueError("At least one path must be provided.")
 
-    # Define default colors and labels (will be extended if needed)
-    default_colors = ["b", "g", "r", "c", "m", "y", "k", "tab:blue", "tab:orange", "tab:green"]
+    # colormap
+    cmap = matplotlib.colormaps["tab10"]
+    colors = cmap(np.linspace(0, 1 ,len(paths)))
 
     # Use as many colors and labels as needed
-    colors = default_colors[:len(paths)]
     labels = [Path(path).name for path in paths]
 
     fig, ax = plt.subplots(
         1,
-        figsize = (10,6),
+        figsize = (7,4.5),
     )
 
     for i, base_path in enumerate(paths):
@@ -303,10 +321,6 @@ def plot_loss_data(
 
             loss = [np.mean(ep) for ep in loss]
             acc  = [np.mean(ep) for ep in acc]
-            if i == 4:
-                big = np.argmax(loss)
-                loss = loss[:big]
-                acc = acc[:big]
 
             # what to plot
             if plot_loss:
@@ -322,24 +336,25 @@ def plot_loss_data(
                 data,
                 color = colors[i],
                 label = labels[i],
-                marker = "o",
-                # s = 2,
                 linestyle = "-"
             )
-            print(f"MaxVal for {file_path}: {np.max(data)}")
+            print(f"MinVal for {file_path}: {np.min(data)} after {len(data)} epochs")
 
 
         except FileNotFoundError:
             print(f"Error: File not found at {file_path}")
 
     y_title = "Loss" if plot_loss else "Accuracy"
-    fig.suptitle("Comparison of Accuracy for Surrogate Gradients")
+    fig.suptitle(f"Comparison of {y_title} for Surrogate Gradients")
     ax.set_xlabel("Epochs")
     ax.set_ylabel(y_title)
     ax.legend()
     ax.grid(True)
-    print("Saved")
-    plt.savefig(f"./img/{y_title.lower()[:4]}-surrogates-full.pdf", format = "pdf")
+    plt.savefig(
+        f"./img/{y_title.lower()[:4]}-surrogates-full.pdf",
+        format = "pdf",
+        bbox_inches = "tight"
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Plot data from three pickle files.")
@@ -352,6 +367,27 @@ def parse_args():
         help = "Directory paths for the data."
             "Each should contain bin/test-metrics.pkl and estim/info.pkl"
     )
+    parser.add_argument(
+        "--layer",
+        "-l",
+        type = int,
+        required = False,
+        default = 1,
+        help = "Layer index for information plots (default: 1)"
+    )
+    parser.add_argument(
+        "--window",
+        "-w",
+        type = int,
+        required = False,
+        default = 32,
+        help = "Window size for information analysis (default: 32)."
+    )
+    parser.add_argument(
+        "--plot-loss",
+        action = "store_true",
+        help = "Plot loss instead of accuracy (default: plot accuracy).",
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -361,6 +397,6 @@ if __name__ == "__main__":
     args = parse_args()
     plot_lif_voltage()
 
-    plot_info_data(*args.paths)
+    plot_info_data(*args.paths, layer = args.layer, window = args.window)
     plot_info_decoder_loss(*args.paths)
-    plot_loss_data(*args.paths, plot_loss = False)
+    plot_loss_data(*args.paths, plot_loss = args.plot_loss)
