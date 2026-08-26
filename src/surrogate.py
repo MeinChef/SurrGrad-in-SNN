@@ -1,6 +1,5 @@
-from imports import torch
-from imports import surrogate
-from imports import Callable
+from imports import Callable, surrogate, torch
+
 
 def stable_sigmoid(slope: int) -> Callable:
     
