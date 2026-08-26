@@ -299,6 +299,7 @@ class DataHandler:
         model: SynthModel,
         data: torch.utils.data.DataLoader,
         # split: list[float] | None = None,
+        layer: int = -1
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Extracts network responses from a trained model and splits the resulting dataset
@@ -329,7 +330,8 @@ class DataHandler:
         # rec.enable()
         self.recorder.clear_recorded_data()
         self.recorder.enable()
-        last_layer_key = self.recorder.monitored_layers[-1]
+        layer_key = self.recorder.monitored_layers[layer]
+
 
         outputs = []
         labels = []
@@ -346,7 +348,7 @@ class DataHandler:
                 labels.append(label)                    # [batch_size]
 
         # gets list[tuple(t0)[spk, mem], tuple(t1)[spk, mem], ...]
-        recordings = self.recorder[last_layer_key]                # [T*B, B, N]
+        recordings = self.recorder[layer_key]                # [T*B, B, N]
         # filters for spikes; list[spk(t0), spk(t1), ...]
         recordings = [x for x, _ in recordings]         # [T*B, B, N]
         # since recordings is now over the whole dataset, it needs splitting
@@ -374,7 +376,8 @@ class DataHandler:
         self,
         repr: Literal["count", "smoothed"],  # noqa: F821
         window_width: int = 20,
-        step: int = 5
+        step: int = 5,
+        filtered = True
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not hasattr(self, "raw_outputs"):
             raise RuntimeError("Please run get_network_response() beforehand.")
@@ -402,6 +405,13 @@ class DataHandler:
                 dt_ms = 1,
                 tau_ms = 5,
             )
+
+            if filtered:
+                max_rates = rates.max() / 2
+                # filter out neurons with rate > 150
+                mask = (rates < max_rates).any(dim=1)
+                rates = rates[mask] # this "deletes" neurons
+
             for start in starts:
                 out = rates[
                     :,
@@ -683,7 +693,7 @@ class DataHandler:
         self,
         save: bool = True,
         name_ext: str | None = None,
-        layer_titles: list = ["Input", "Hidden", "Output"],
+        layer_titles: list | None = None,
         blocking: bool = False
     ) -> None:
         """
@@ -727,6 +737,9 @@ class DataHandler:
         if name_ext is None:
             name_ext = self.id
 
+        if layer_titles is None:
+            layer_titles = ["Input", "Hidden", "Output"]
+
         FIG_SIZE = (18, 15) # A2 papersize
         DPI = 300
         NROWS = 4
@@ -745,6 +758,24 @@ class DataHandler:
             total = len(self._tendencies),
             desc = "Plotting Spike Analysis"
         ):
+            # the sample analysed in the thesis used these functions
+            # to create the subplots.
+            if key == "sample-12":
+                # measurements for this sample
+                measurements = self._tendencies[key]["measurements"]
+                # call the new per-layer PDF creator
+                self._plot_layerwise_pdf(
+                    measurements=measurements,
+                    name_ext=name_ext,
+                    sample_key=key,
+                )
+                self._plot_hidden_raster_and_rate(
+                    measurements=measurements,
+                    name_ext=name_ext,
+                    sample_key=key,
+                    hidden_layer_name="neurons.0",   # adjust if your hidden layer has a different key
+                )
+
             measurements = self._tendencies[key]["measurements"]
             num_layers = len(measurements)
 
@@ -795,18 +826,18 @@ class DataHandler:
             # Shared firing-rate normalization
             # -------------------------------------------------
 
-            all_rates = np.concatenate([
-                data["smoothed_rates"]
-                    .cpu()
-                    .numpy()
-                    .ravel()
-                for data in measurements.values()
-            ])
+            # all_rates = np.concatenate([
+            #     data["smoothed_rates"]
+            #         .cpu()
+            #         .numpy()
+            #         .ravel()
+            #     for data in measurements.values()
+            # ])
 
-            rate_norm = colors.Normalize(
-                vmin = 0,
-                vmax = np.max(all_rates),
-            )
+            # rate_norm = colors.Normalize(
+            #     vmin = 0,
+            #     vmax = np.max(all_rates),
+            # )
             # -------------------------------------------------
             # Shared time normalization
             # -------------------------------------------------
@@ -819,7 +850,6 @@ class DataHandler:
             # Plot each layer
             # -------------------------------------------------
             images = []
-            pca_points = []
             all_stats = []
 
             for i, (layer, data) in enumerate(
@@ -959,6 +989,17 @@ class DataHandler:
                     index = False
                 )
 
+                # print a clean table
+                print("\nPCA Analysis Summary:")
+                print(
+                    df_stats[[
+                        "layer",
+                        "pc1_var",
+                        "pc2_var",
+                        "d_eff",
+                        "n_pc_90"
+                    ]].to_string(index = False)
+                )
             else:
                 # print a clean table
                 print("\nPCA Analysis Summary:")
@@ -991,6 +1032,10 @@ class DataHandler:
             save = save,
             name_ext = name_ext
         )
+        self.plot_filtered_rsync(
+            save = save,
+            name_ext = name_ext
+        )
 
         if blocking:
             plt.show()
@@ -1015,11 +1060,6 @@ class DataHandler:
         :returns: The Axes now containing a plot.
         :rtype: plt.Axes
         """
-        s = None
-        if data["neurons"] > 5 and data["neurons"] <= 100:
-            s = 2
-        elif data["neurons"] > 100:
-            s = 1
 
         spikes = data["spikes"].detach().cpu().numpy()
 
@@ -1032,21 +1072,11 @@ class DataHandler:
             spike_times,
             orientation = "horizontal",
             lineoffsets = np.arange(spikes.shape[0]),
-            linelengths = 0.8,
+            linelengths = 0.1 if data["neurons"] == 2 else 0.7,
             linewidths = 0.8 if spikes.shape[0] > 50 else 1.0,
             colors = "black",
             rasterized = True,
         )
-
-        # axes.scatter(
-        #     *torch.nonzero(
-        #         data["spikes"].cpu().T,
-        #         as_tuple = True
-        #     ),
-        #     s = s,
-        #     c = "black",
-        #     marker = "|"
-        # )
 
         # y axis tick setup
         axes.yaxis.set_major_locator(MaxNLocator(
@@ -1110,7 +1140,7 @@ class DataHandler:
         offset_mem = mem + neuron_offsets[:, np.newaxis]
 
         # make membrane potentials look different
-        cmap = matplotlib.colormaps["viridis"]
+        cmap = matplotlib.colormaps["spring"]
         colors = cmap(np.linspace(0, 1, num_neurons))
 
         # create a secondary y-axis
@@ -1217,11 +1247,11 @@ class DataHandler:
             fraction = 0.04,
             aspect = 40,
             label = "Firing rate (Hz)",
-            pad = 0.03,
+            # pad = 0.03,
         )
 
         if show_ylabel:
-            axes.set_ylabel("Neuron")
+            axes.set_ylabel("Neurons")
         else:
             axes.set_ylabel("")
 
@@ -1409,7 +1439,7 @@ class DataHandler:
             )
 
         # Create a color map based on time to visualize trajectory direction
-        points = axes.scatter(
+        axes.scatter(
             X_plot[:, 0],
             X_plot[:, 1],
             c = time,
@@ -1556,6 +1586,118 @@ class DataHandler:
 
         return fig
 
+    def plot_filtered_rsync(
+        self,
+        save: bool = True,
+        name_ext: str | None = None,
+    ):
+
+        # pre-execution checks
+        if not self._tendencies:
+            raise UnboundLocalError(
+                "Tendencies have not been calculated before. " \
+                "Please call measure_tendencies() before you call this function."
+            )
+
+        if save:
+            os.makedirs(
+                self.img_path,
+                exist_ok = True
+            )
+            os.environ["MPLBACKEND"] = "pdf"
+        if name_ext is None:
+            name_ext = self.id
+
+        # init empty lists
+        cls = []
+
+        # and create lists that extract rsync and classes 
+        for sample in self._tendencies.values():
+            cls.append(sample["class"].item())
+
+        cls = np.array(cls)
+        unique_classes = np.unique(cls)
+
+        fig = plt.figure(
+            num = "rsync-filtered",
+            figsize = (2.5 * unique_classes.size, 5),
+            dpi = 300,
+            layout = "constrained",
+            clear = True
+        )
+        axes = fig.subplot_mosaic(
+            mosaic = [
+                [f"class{i}" for i in unique_classes],
+                ["legend"    for _ in unique_classes]
+            ],
+            # squeeze = False,
+            width_ratios = [1 for _ in unique_classes],
+            height_ratios = (1,0.01),
+        )
+
+        # MAX_RATES = 150
+        filtered_rsyncs = []
+        for sample in self._tendencies.values():
+            sample_filtered_rsyncs = []
+            for layer, data in sample["measurements"].items():
+                spikes = data["spikes"] # shape: [neurons, time_steps]
+                rates = data["smoothed_rates"]
+                max_rates = rates.max() / 2
+                # filter out neurons with rate > 150
+                if layer == "neurons.0":
+                    # values = rates.mean(dim=1)
+                    # print(values)
+                    # mask = values < 100
+                    mask = (rates < max_rates).any(dim=1)
+                    print(mask.sum())
+                    spikes = spikes[mask] # this "deletes" neurons, but we don't want that?
+                    # rates = rates.masked_fill(~mask.unsqueeze(1), 0) # doesn't change the result
+                rsync = self.measure_rsync(spikes)
+                sample_filtered_rsyncs.append(rsync.cpu().numpy())
+            filtered_rsyncs.append(sample_filtered_rsyncs)
+
+        rsyncs = np.array(filtered_rsyncs)
+
+        norm = colors.Normalize(
+            vmin = rsyncs.min(),
+            vmax = rsyncs.max(),
+        )
+        cmap = matplotlib.colormaps["viridis"]
+
+        for c in unique_classes:
+            axes[f"class{c}"] = sns.heatmap(
+                rsyncs[cls == c],
+                ax = axes[f"class{c}"],
+                norm = norm,
+                cmap = cmap,
+                annot = True,
+                cbar = True,
+                cbar_ax = axes["legend"],
+                cbar_kws = {"location": "bottom"}
+            )
+            axes[f"class{c}"].set_title(f"Class {c}")
+            axes[f"class{c}"].set_xlabel("Layers")
+            axes[f"class{c}"].set_ylabel("Samples")
+
+        fig.suptitle(
+            "Population synchrony across samples",
+            fontsize=14,
+            fontweight="bold",
+        )
+
+        if save:
+            fig.savefig(
+                os.path.join(
+                    self.img_path,
+                    f"filtered-rsyncs-{name_ext}.pdf"
+                ),
+                format = "pdf",
+                bbox_inches = "tight",
+            )
+            plt.close(fig)
+
+        return fig
+
     def save_metrics(
         self,
         loss: list | None,
@@ -1581,3 +1723,266 @@ class DataHandler:
                 self.metrics,
                 file
             )
+
+    # the following two functions are purely vibe-coded
+
+    def _plot_layerwise_pdf(
+        self,
+        measurements: dict,
+        name_ext: str,
+        sample_key: str,
+    ) -> None:
+        """
+        Create three PDFs (one per layer) that contain only:
+            * instantaneous firing-rate heat-map,
+            * ISI histogram,
+            * PCA trajectory (time-coloured).
+
+        The function is meant to be called from ``visualise_tendencies`` when the
+        current sample is ``sample-12``.  All figures are saved in ``self.img_path``.
+        The layout is **vertical** (rate → ISI → PCA) and the three PDFs are named
+
+            tendencies-{name_ext}-{sample_key}-{layer}.pdf
+
+        Parameters
+        ----------
+        measurements : dict
+            ``self._tendencies[sample_key]["measurements"]`` - a mapping
+            ``layer_name → layer_dict``.
+        name_ext : str
+            Identifier that is appended to the file name (usually the run-id).
+        sample_key : str
+            The key of the sample being plotted (e.g. ``"sample-12"``).
+        """
+        # ------------------------------------------------------------------
+        # 1️⃣  Global normalisations (shared across all layers)
+        # ------------------------------------------------------------------
+        #   - rate colour scale (max over *all* layers)
+        # all_rates = np.concatenate([
+        #     data["smoothed_rates"].cpu().numpy().ravel()
+        #     for data in measurements.values()
+        # ])
+        # rate_norm = colors.Normalize(vmin=0, vmax=np.max(all_rates))
+
+        #   - time normalisation for the PCA colour-bar
+        time_norm = colors.Normalize(
+            vmin=0,
+            vmax=self.time_steps * self.dt_ms,
+        )
+
+        # ------------------------------------------------------------------
+        # 2️⃣  Loop over layers → one figure per layer
+        # ------------------------------------------------------------------
+        for layer_name, layer_data in measurements.items():
+            # --------------------------------------------------------------
+            #   Figure set-up (3 rows, 1 column)
+            # --------------------------------------------------------------
+            FIG_SIZE = (6, 11)          # a comfortable portrait size
+            DPI      = 300
+            NROWS    = 3
+            HEIGHT_RATIOS = [1.2, 0.4, 1]   # rate, ISI, PCA
+
+            fig, axes = plt.subplots(
+                nrows=NROWS,
+                ncols=1,
+                figsize=FIG_SIZE,
+                dpi=DPI,
+                gridspec_kw={
+                    "height_ratios": HEIGHT_RATIOS,
+                    # hspace=0.25,
+                    # wspace=0.0,
+                },
+                # constrained_layout=True,
+            )
+            # ``axes`` is a 1-D array because we have a single column
+            axes = np.atleast_1d(axes)
+
+            # --------------------------------------------------------------
+            #   2️⃣  Rate heat-map (row 0)
+            # --------------------------------------------------------------
+            self._plot_rate_heatmap(
+                fig=fig,
+                axes=axes[0],
+                data=layer_data,
+                show_ylabel=True,
+            )
+            # enforce the shared colour-scale
+            # im.set_norm(rate_norm)
+
+            # --------------------------------------------------------------
+            #   3️⃣  ISI histogram (row 1)
+            # --------------------------------------------------------------
+            self._plot_isis(
+                axes=axes[1],
+                data=layer_data,
+                show_ylabel=True,
+            )
+
+            # --------------------------------------------------------------
+            #   4️⃣  PCA trajectory (row 2)
+            # --------------------------------------------------------------
+            self._plot_pca_trajectory(
+                axes=axes[2],
+                data=layer_data,
+                time_norm=time_norm,
+            )
+            # add a colour-bar for the time axis (right side of the PCA panel)
+            sm = cm.ScalarMappable(norm=time_norm, cmap="viridis")
+            fig.colorbar(
+                sm,
+                ax=axes[2],
+                location="right",
+                label="Time (ms)",
+                shrink=0.8,
+                pad=0.02,
+            )
+
+            # --------------------------------------------------------------
+            #   5️⃣  Global titles / labels
+            # --------------------------------------------------------------
+            layer_map = {
+                "neurons.-1": "Input",
+                "neurons.0": "Hidden",
+                "neurons.1": "Output"
+            }
+
+            fig.suptitle(
+                f"{layer_map[layer_name]} Layer - Sample {sample_key.split('-')[-1]} - "
+                f"Class {self._tendencies[sample_key]['class'].item()}",
+                fontsize=14,
+                fontweight="bold",
+            )
+            axes[0].set_title("Instantaneous Firing Rate", fontsize=12)
+            axes[1].set_title("Inter-Spike-Interval Histogram", fontsize=12)
+            axes[2].set_title("Population Trajectory (PCA)", fontsize=12)
+
+            # --------------------------------------------------------------
+            #   6️⃣  Save the PDF
+            # --------------------------------------------------------------
+            out_path = os.path.join(
+                self.img_path,
+                f"tendencies-{name_ext}-{sample_key}-{layer_name}.pdf",
+            )
+            fig.tight_layout(pad=1.2, h_pad=0.8, w_pad=0.8)
+            fig.savefig(out_path, format="pdf", bbox_inches="tight")
+            plt.close(fig)   # free memory
+
+                # ----------------------------------------------------------------------
+    # NEW HELPER: raster + heat-map of the hidden layer (side-by-side)
+    # ----------------------------------------------------------------------
+    def _plot_hidden_raster_and_rate(
+        self,
+        measurements: dict,
+        name_ext: str,
+        sample_key: str,
+        hidden_layer_name: str = "neurons.0",   # default name used in the repo
+    ) -> None:
+        """
+        Produce a **single PDF** that contains
+
+            ┌───────────────┬───────────────────────┐
+            │  Spike raster │  Instantaneous rate    │
+            │   (layer)     │   heat-map (layer)     │
+            └───────────────┴───────────────────────┘
+
+        The raster is plotted with the existing ``_plot_spikes`` routine,
+        the heat-map with ``_plot_rate_heatmap``.  Both panels share the same
+        time-axis (ms) and are saved as
+
+            tendencies-{name_ext}-{sample_key}-hidden-raster-heat.pdf
+
+        Parameters
+        ----------
+        measurements : dict
+            ``self._tendencies[sample_key]["measurements"]`` - a mapping
+            ``layer_name → layer_dict``.
+        name_ext : str
+            Identifier that is appended to the file name (usually the run-id).
+        sample_key : str
+            The key of the sample being plotted (e.g. ``"sample-12"``).
+        hidden_layer_name : str, optional
+            The exact key that identifies the hidden layer in ``measurements``.
+            The default matches the naming used in the original code.
+        """
+        # ------------------------------------------------------------------
+        # 1️⃣  Grab the hidden-layer data
+        # ------------------------------------------------------------------
+        if hidden_layer_name not in measurements:
+            raise KeyError(
+                f"Hidden layer '{hidden_layer_name}' not found in measurements. "
+                f"Available layers: {list(measurements)}"
+            )
+        hidden_data = measurements[hidden_layer_name]
+
+        # ------------------------------------------------------------------
+        # 2️⃣  Figure set-up - 1 row, 2 columns
+        # ------------------------------------------------------------------
+        FIG_SIZE = (12,4)          # wide enough for side-by-side view
+        DPI      = 300
+        fig, axes = plt.subplots(
+            nrows=1,
+            ncols=2,
+            figsize=FIG_SIZE,
+            dpi=DPI,
+            gridspec_kw={
+                "wspace": 0.15, "hspace":0.0
+            },
+            # constrained_layout=True,
+        )
+        # axes[0] → raster, axes[1] → heat-map
+        # ------------------------------------------------------------------
+        # 3️⃣  Plot the raster (left)
+        # ------------------------------------------------------------------
+        layer_map = {
+            "neurons.-1": "Input",
+            "neurons.0": "Hidden",
+            "neurons.1": "Output"
+        }
+        self._plot_spikes(
+            axes=axes[0],
+            data=hidden_data,
+            title=f"{layer_map[hidden_layer_name]} - Spike raster",
+            show_ylabel=True,
+        )
+        # remove the x-label on the raster (we’ll put it on the heat-map)
+        # axes[0].set_xlabel("")
+        axes[0].set_title(f"{layer_map[hidden_layer_name]} - Spike raster", fontsize=12)
+
+
+        # ------------------------------------------------------------------
+        # 4️⃣  Plot the rate heat-map (right)
+        # ------------------------------------------------------------------
+        self._plot_rate_heatmap(
+            fig=fig,
+            axes=axes[1],
+            data=hidden_data,
+            show_ylabel=True,
+        )
+        # give the heat-map its own title
+        axes[1].set_title(f"{layer_map[hidden_layer_name]} - Instantaneous rate", fontsize=12)
+        axes[1].set_ylabel("")
+
+        # ------------------------------------------------------------------
+        # 5️⃣  Global figure title & colour-bar handling
+        # ------------------------------------------------------------------
+        class_id = self._tendencies[sample_key]["class"].item()
+        fig.suptitle(
+            f"Sample {sample_key.split('-')[-1]} - Class {class_id} - Hidden layer overview",
+            fontsize=14,
+            fontweight="bold",
+        )
+        # The heat-map already adds its own colour-bar (bottom).  No extra work needed.
+
+        # ------------------------------------------------------------------
+        # 6️⃣  Save the PDF
+        # ------------------------------------------------------------------
+        out_path = os.path.join(
+            self.img_path,
+            f"tendencies-{name_ext}-{sample_key}-hidden-raster-heat.pdf",
+        )
+        fig.tight_layout()
+        fig.savefig(out_path, format="pdf", bbox_inches="tight")
+        plt.close(fig)   # free memory
+    # ----------------------------------------------------------------------
+    # END OF NEW HELPER
+    # ----------------------------------------------------------------------
