@@ -35,29 +35,20 @@ class InformationEstimator:
     """
     Decoder-based estimator of I(S;R), following Heller et al. (1995).
 
-    Parameters
-    ----------
-    hidden_dim:
-        Number of hidden units in the decoder.
-        Heller et al. used 6.
-
-    learning_rate:
-        Learning rate for the decoder.
-
-    weight_decay:
-        L2 regularisation.
-
-    max_epochs:
-        Maximum number of decoder training epochs.
-
-    patience:
-        Early-stopping patience measured in validation epochs.
-
-    prior:
-        "decoder" reproduces Heller's estimator:
-            P(s) = mean_r O_s(r)
-
-        "labels" instead uses the empirical class distribution.
+    :param hidden_dim: Number of hidden units in the decoder. Heller et al. used 6.
+    :type hidden_dim: int
+    :param learning_rate: Learning rate for the decoder.
+    :type learning_rate: float
+    :param weight_decay: L2 regularisation.
+    :type weight_decay: float
+    :param max_epochs: Maximum number of decoder training epochs.
+    :type max_epochs: int
+    :param patience: Early-stopping patience measured in validation epochs.
+    :type patience: int
+    :param prior: Prior distribution for the stimulus. 
+        - "decoder": Uses P(s) = mean_r O_s(r), as in Heller et al. 
+        - "labels": Uses the empirical class distribution.
+    :type prior: str
     """
 
     def __init__(
@@ -164,17 +155,12 @@ class InformationEstimator:
         """
         Fit P(S|R).
 
-        Parameters
-        ----------
-        responses:
-            Tensor [samples, features].
-
-        labels:
-            Tensor [samples].
-
-        Returns
-        -------
-        self
+        :param responses: Tensor of shape [samples, features].
+        :type responses: torch.Tensor
+        :param labels: Tensor of shape [samples], representing class labels.
+        :type labels: torch.Tensor
+        :returns: Returns self to allow method chaining.
+        :rtype: self
         """
 
         self.time_steps = responses.shape[1]
@@ -232,6 +218,8 @@ class InformationEstimator:
             epoch_val_loss = torch.mean(torch.tensor(val_loss)).cpu()
             self.validation_loss.append(epoch_val_loss)
 
+            # early stopping: if validation loss doesn't improve
+            # for patience epochs, stop training to prevent overfitting.
             if epoch_val_loss < best_validation_loss:
                 best_validation_loss = epoch_val_loss
 
@@ -267,9 +255,10 @@ class InformationEstimator:
         """
         Calculate O_s(r) = estimated P(S=s | R=r).
 
-        Returns
-        -------
-        Tensor [samples, classes].
+        :param data: Data that the posterior distribution will be applied on
+        :type data: torch.utils.data.DataLoader
+        :returns: Probabilities and Labels
+        :rtype: tuple[torch.Tensor, torch.Tensor]
         """
 
         if self.decoder is None:
@@ -284,6 +273,7 @@ class InformationEstimator:
 
             logits = self.decoder(x)
 
+            # softmax to convert logits to probabilities
             probabilities.append(
                 torch.softmax(logits, dim = -1)
             )
@@ -320,7 +310,6 @@ class InformationEstimator:
 
         if self.prior == "decoder":
             # This is Heller et al.'s Eq. (3):
-            #
             # P(s) = 1/N sum_n O_s(r_n)
             prior = probabilities.mean(dim=0)
 
@@ -346,9 +335,12 @@ class InformationEstimator:
 
         p_prior = prior[labels]
 
-        # Numerical protection.
+        # numerical protection.
         eps = torch.finfo(probabilities.dtype).tiny
 
+        # information estimate: I(S;R) = E[log2( P(S|X) / P(S) )]
+        # equivalent to the expected log-likelihood ratio 
+        # under the estimated posterior
         information = torch.mean(
             torch.log2(
                 p_correct.clamp_min(eps)
@@ -399,6 +391,8 @@ class InformationEstimator:
 
         eps = torch.finfo(probabilities.dtype).tiny
 
+        # p_correct: P(s_n | r_n) for the true class s_n
+        # prior[labels]: P(s_n) for each sample (broadcasted)
         information_per_sample = torch.log2(
             p_correct.clamp_min(eps)
             /
@@ -440,6 +434,7 @@ class InformationEstimator:
             {
                 "decoder_state_dict": self.decoder.state_dict(),
 
+                # save indices to allow reproducible splits later
                 "train_idx": self.train_idx,
                 "val_idx": self.val_idx,
                 "test_idx": self.test_idx,
@@ -463,6 +458,8 @@ class InformationEstimator:
         ident,
         input_dim: int,
     ):
+        # input_dim is required because the decoder architecture depends on it
+        # (we can't reconstruct the model without knowing the input size)
         path = os.path.join(path, "estim")
 
         checkpoint = torch.load(
